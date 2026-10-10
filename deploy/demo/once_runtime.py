@@ -34,6 +34,45 @@ OPTIONAL={'VAULTCONTEXT_S3_FORCE_PATH_STYLE','LITESTREAM_SYNC_INTERVAL','CONTACT
 DATABASES=('data.db','auxiliary.db','contacts.db')
 MAX_DATABASE=512*1024*1024
 
+# Official https://www.cloudflare.com/ips-v4/ and /ips-v6/, checked 2026-10-10.
+# Review updates with real-nginx spoof-resistance tests; never fetch at startup.
+CLOUDFLARE_PROXY_CIDRS=(
+    '173.245.48.0/20','103.21.244.0/22','103.22.200.0/22','103.31.4.0/22',
+    '141.101.64.0/18','108.162.192.0/18','190.93.240.0/20','188.114.96.0/20',
+    '197.234.240.0/22','198.41.128.0/17','162.158.0.0/15','104.16.0.0/13',
+    '104.24.0.0/14','172.64.0.0/13','131.0.72.0/22',
+    '2400:cb00::/32','2606:4700::/32','2803:f800::/32','2405:b500::/32',
+    '2405:8100::/32','2a06:98c0::/29','2c0f:f248::/32',
+)
+
+def proxy_header_config():
+    """Normalize the known ONCE TLS hop, never an arbitrary forwarded chain.
+
+    ONCE's TLS proxy overwrites XFF with its socket peer. Container ingress is
+    private to the trusted host. Cloudflare's own client header is authoritative
+    only when that peer belongs to a reviewed Cloudflare proxy range.
+    Nginx geo treats malformed/empty IP strings as 255.255.255.255, rejected below.
+    """
+    ranges='\n'.join(cidr+' 1;' for cidr in CLOUDFLARE_PROXY_CIDRS)
+    return '''
+map $http_x_forwarded_for $demo_peer_ip { "" $remote_addr; default $http_x_forwarded_for; }
+geo $demo_peer_ip $demo_peer_valid { default 1; 255.255.255.255 0; }
+geo $http_cf_connecting_ip $demo_cf_ip_valid { default 1; 255.255.255.255 0; }
+geo $demo_peer_ip $demo_cloudflare_peer { default 0;
+'''+ranges+'''
+}
+map "$demo_peer_valid:$demo_cloudflare_peer:$demo_cf_ip_valid" $demo_reject_ip {
+    default 0;
+    "0:0:0" 1;
+    "0:0:1" 1;
+    "1:1:0" 1;
+}
+map "$demo_cloudflare_peer:$demo_cf_ip_valid" $demo_client_ip {
+    "1:1" $http_cf_connecting_ip;
+    default $demo_peer_ip;
+}
+'''
+
 class RuntimeErrorSafe(RuntimeError):pass
 
 def utc_day():return datetime.now(timezone.utc).date().isoformat()
@@ -165,14 +204,17 @@ class Backend:
         except Exception:return False
     def gate(self,opened):
         self.stop('gate')
-        route='''location / { proxy_pass http://127.0.0.1:8081; proxy_http_version 1.1;
+        route='''location / { if ($demo_reject_ip) { return 400; }
+proxy_pass http://127.0.0.1:8081; proxy_http_version 1.1;
 proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto https;
-proxy_set_header X-Forwarded-For $http_x_forwarded_for; proxy_set_header Connection "";
+proxy_set_header X-Forwarded-For $demo_client_ip;
+proxy_set_header CF-Connecting-IP ""; proxy_set_header X-Real-IP ""; proxy_set_header Connection "";
 proxy_buffering off; proxy_request_buffering off; proxy_read_timeout 300s; }''' if opened else 'location / { return 503; }'
         config='''pid /tmp/vaultcontext-demo-nginx.pid;
 error_log /dev/null; events { worker_connections 1024; }
 http { access_log off; client_body_temp_path /tmp/client; proxy_temp_path /tmp/proxy;
 fastcgi_temp_path /tmp/fastcgi; uwsgi_temp_path /tmp/uwsgi; scgi_temp_path /tmp/scgi;
+'''+proxy_header_config()+'''
 server { listen 80; absolute_redirect off; client_max_body_size 14m;
 location = /up { add_header Cache-Control "no-store" always; proxy_pass http://127.0.0.1:8782/ready; }
 '''+route+'\n} }\n'

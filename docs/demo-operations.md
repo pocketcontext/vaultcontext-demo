@@ -216,3 +216,53 @@ Status installation metadata identifies the public skill and launcher client pin
 Missing/invalid metadata keeps setup unavailable. This does not probe upstream
 GitHub availability. Existing wheel-backed launchers require replacement.
 The API paths, OAuth callback and three-database recovery contract are unchanged.
+
+## Cloudflare proxy and client identity
+
+The ONCE TLS proxy is the trusted ingress hop. ONCE v0.3.3 configures
+`basecamp/kamal-proxy:once-01` with `--tls` and no `--forward-headers` override.
+That mode replaces `X-Forwarded-For` with its socket peer, while forwarding
+`CF-Connecting-IP`. An isolated TLS test of the installed proxy binary verified
+this behavior on 2026-10-10, including an attacker-supplied XFF chain. See
+[ONCE proxy configuration](https://github.com/basecamp/once/blob/v0.3.3/internal/docker/proxy.go)
+and [Kamal forwarding defaults](https://kamal-deploy.org/docs/configuration/proxy/#forward-headers).
+
+The application nginx gate uses that single canonical peer. Only a peer within
+the reviewed Cloudflare proxy CIDRs can supply `CF-Connecting-IP` as the client
+identity. A direct-origin request cannot replace its identity with a forged
+Cloudflare header. The gate rejects malformed/multiple peer addresses and missing
+or malformed client headers from Cloudflare peers, then forwards one normalized
+XFF address to PocketBase. Alternate client-IP headers are removed. Requests
+without XFF use the socket peer, preserving local container checks. Nginx uses
+its [geo address parser](https://nginx.org/en/docs/http/ngx_http_geo_module.html)
+for both IPv4 and IPv6; its invalid-address sentinel is explicitly rejected.
+
+Keep the application port private to the trusted host/ONCE network. This trust
+contract does not apply to a publicly exposed application port or a proxy that
+preserves arbitrary XFF. Do not enable ONCE forwarded-header preservation or
+change the proxy topology without repeating the spoof-resistance checks.
+Cloudflare Workers in this zone also remain trusted infrastructure; their
+[client-IP semantics](https://developers.cloudflare.com/fundamentals/reference/http-headers/#cf-connecting-ip)
+differ from ordinary browser requests.
+
+The 22 CIDRs in `deploy/demo/once_runtime.py` were checked against Cloudflare's
+[IPv4](https://www.cloudflare.com/ips-v4/) and [IPv6](https://www.cloudflare.com/ips-v6/)
+lists on 2026-10-10. Updates require reviewing both official lists, changing the
+pinned tuple and review date, running the real nginx tests on the built image,
+and publishing a normal validated release. There is no network fetch at startup.
+
+Both native image CI jobs require the real nginx test; a developer machine
+without nginx skips it during ordinary unit discovery. To run the required gate:
+
+```sh
+docker run --rm --entrypoint python3 \
+  -e VAULTCONTEXT_TEST_REQUIRE_NGINX=true \
+  -e VAULTCONTEXT_TEST_ONCE_RUNTIME=/usr/local/bin/vaultcontext-demo-once.py \
+  --mount type=bind,src="$PWD/tests/test_demo_proxy_headers.py",dst=/tmp/test_demo_proxy_headers.py,readonly \
+  vaultcontext:ci /tmp/test_demo_proxy_headers.py
+```
+
+Before enabling proxying, verify public readiness, revision/asset attestation,
+OAuth and CLI/API access separately from direct-origin TLS. Public HTML must
+remain byte-exact for release attestation; any hostname-specific edge settings
+must preserve that contract without modifying shared zone-wide settings.

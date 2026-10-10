@@ -69,6 +69,13 @@ jobs:
           VAULTCONTEXT_TEST_BINARY="$RUNNER_TEMP/pocketcontext-maintenance" VAULTCONTEXT_TEST_LITESTREAM="$RUNNER_TEMP/vaultcontext-litestream" uv run --locked python -m unittest discover -s tests -p test_demo_auxiliary_replication.py
           VAULTCONTEXT_TEST_BINARY="$RUNNER_TEMP/pocketcontext-maintenance" VAULTCONTEXT_TEST_LITESTREAM="$RUNNER_TEMP/vaultcontext-litestream" uv run --locked python -m unittest discover -s tests -p test_demo_once_runtime.py
           VAULTCONTEXT_TEST_BINARY="$RUNNER_TEMP/pocketcontext-maintenance" VAULTCONTEXT_TEST_LITESTREAM="$RUNNER_TEMP/vaultcontext-litestream" uv run --locked python -m unittest discover -s tests -p test_demo_standard_runtime.py
+      - name: Cloudflare client IP and direct-origin spoof resistance
+        run: |
+          docker run --rm --entrypoint python3 \
+            -e VAULTCONTEXT_TEST_REQUIRE_NGINX=true \
+            -e VAULTCONTEXT_TEST_ONCE_RUNTIME=/usr/local/bin/vaultcontext-demo-once.py \
+            --mount type=bind,src="$PWD/tests/test_demo_proxy_headers.py",dst=/tmp/test_demo_proxy_headers.py,readonly \
+            vaultcontext:ci /tmp/test_demo_proxy_headers.py
       - name: Native ONCE bootstrap and exclusive volume
         run: python3 docker/once_smoke.py --image vaultcontext:ci
       - name: Startup errors for missing configuration
