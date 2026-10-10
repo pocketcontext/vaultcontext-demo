@@ -1,4 +1,16 @@
-# VaultContext deployment
+# Historical core VaultContext deployment evidence
+
+The records below were inherited from `pocketcontext/vaultcontext` with its Git
+history. They describe past releases of core VaultContext at
+`vault.pocketcontext.com`, not releases or current runtime state of this dedicated
+demo repository. Historical image digests, repository links and commands are
+preserved as evidence; do not use them as the demo deployment runbook.
+
+For the dedicated demo at `vault-demo.pocketcontext.com`, use
+[demo operations](docs/demo-operations.md), the
+[CI and deployment contract](docs/ci-and-deployment.md) and
+[repository separation](docs/repository-separation.md). The repository cutover is
+in progress; this file does not attest its completion or a new live release.
 
 ## Full-name CLI — 4 October 2026
 

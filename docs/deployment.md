@@ -1,11 +1,19 @@
 # Container deployment and recovery
 
+This repository owns the disposable public demo at `vault-demo.pocketcontext.com`.
+Use [demo operations](demo-operations.md) for reset, contact retention and recovery
+boundaries, and the [CI and deployment contract](ci-and-deployment.md) for the
+ONCE supervisor and exact-digest release protocol. The core container behavior
+below remains useful for isolated tests; it is not a standalone demo launch
+recipe. [Inherited release evidence](../DEPLOYMENT.md) describes historical core
+VaultContext releases, not the dedicated demo.
+
 The container runs one PocketContext/SQLite writer and Litestream publisher, serves
 port 80 and `/up`, and stores SQLite under `/storage/pb_data`. Primary files are
 private S3 objects. `docker/entrypoint.py` is the sole startup program; tini and
 Litestream own normal signal forwarding and shutdown. No archive scheduler runs.
-The server remains pinned by `POCKETCONTEXT_VERSION`; no schema or ciphertext-format
-change accompanies this runtime refactor. The public onboarding assets remain included.
+The server remains pinned by `POCKETCONTEXT_VERSION`. The image also contains
+the demo supervisor, contact service and public onboarding assets.
 
 ## Configuration
 
@@ -20,17 +28,15 @@ Set `LITESTREAM_REGION=auto` and the verified S3 endpoint for R2. The default sy
 interval is 10 seconds. `LITESTREAM_DISABLED` is unsupported.
 
 Keep paired `VAULTCONTEXT_GOOGLE_CLIENT_ID`/`VAULTCONTEXT_GOOGLE_CLIENT_SECRET`,
-`VAULTCONTEXT_GOOGLE_WORKSPACE_DOMAIN`, optional paired operator email/password,
+the demo Google audience policy, optional paired operator email/password,
 `BASE_URL`, trusted proxy and SMTP configuration unchanged for an existing deployment.
 Secrets remain in the deployment scaffold's ignored private configuration. The
 server child retains primary-storage credentials but drops replica/AWS credentials
 and the bootstrap password. Errors suppress subprocess and SDK details.
 
-The WikiContext migration record dated 6 October 2026 records production on the
-`once-pocketcontext-v2` scaffold with `vaultcontext-files` and `vaultcontext-replica`,
-prefix `once-v2/vaultcontext-production`, separate bucket-scoped keys and manual
-stop-first deployment. This refactor does not attest the current live configuration.
-Older `DEPLOYMENT.md` entries remain historical evidence.
+Demo storage and contact replicas require three independent scoped identities;
+see [storage boundaries](demo-operations.md#storage-boundaries). Core VaultContext
+bucket names and historical production prefixes are not demo configuration.
 
 ## Start, initialize and recover
 
@@ -41,15 +47,12 @@ replicas and partial local state fail closed. A failed verification installs no
 database. Ciphertext is streamed and compared with stored SHA-256; avatars and any
 other file fields are streamed for readability/completeness, without a hash guarantee.
 
-For a genuinely new installation only, provide a private environment file and a
-new volume (these example paths/names are placeholders):
-
-```sh
-docker run --rm --env-file /absolute/private/vaultcontext.env \
-  -v new-vaultcontext:/storage ghcr.io/pocketcontext/vaultcontext:REVIEWED_TAG init
-docker run -d --env-file /absolute/private/vaultcontext.env \
-  -v new-vaultcontext:/storage -p 127.0.0.1:8090:80 ghcr.io/pocketcontext/vaultcontext:REVIEWED_TAG
-```
+Use the maintained ONCE demo supervisor for public hosting. Its control-only
+bootstrap, configuration and initialization are described in the
+[release contract](ci-and-deployment.md). Repository separation preserves the
+existing volume and replicas; never run `init` as part of that cutover.
+The generic entrypoint's initialization rules below apply to isolated container
+validation and genuinely fresh installations only.
 
 `init` requires an empty directory and no existing replica, applies migrations and
 optional operator provisioning, verifies objects, and exits. Normal startup then
@@ -66,42 +69,33 @@ A writable recovery can recreate auxiliary state, not its prior history.
 
 ## Single-writer updates and rollback
 
-Use the maintained `once-pocketcontext-v2` stop-first policy and its restricted
-shared deployment dispatcher. Preserve the volume and exact configuration, fence the
-old publisher and writer, and keep ONCE automatic updates disabled. Host-local
-locks and maintenance state do not provide cross-host fencing. Never run a recovery
-copy against the active replica.
+Use the dedicated demo dispatcher in `once-pocketcontext-v2`. Preserve the volume,
+OAuth identity, exact storage configuration and contact database. The ONCE
+supervisor holds the writer lock and fences public traffic while validating a
+candidate release; keep ONCE automatic updates and whole-volume backups disabled.
+Never run a recovery copy against the active replica.
 
-The image workflow deploys only after the tested multi-architecture manifest is
-published. Set `COLORS_PROFILE=once-v2` to select the GitHub environment
-holding the app-specific `SSH_PRIVATE_KEY` secret and `SERVER_IP`, `SERVER_USER`,
-`SSH_KNOWN_HOSTS` variables. The job requires pinned SSH host keys and sends no remote
-command: the restricted key invokes the maintained dispatcher for VaultContext only.
-Preserve its stop-first locking, one-writer checks, graceful shutdown and pending-state checks; there is no automatic
-rollback. Keep ONCE's own automatic updates disabled; GitHub handles deployment.
-Deployment jobs serialize without cancelling a running update, then check
-`https://vault.pocketcontext.com/up`. That health check verifies availability, not
-the deployed image revision; verify the running revision separately when needed.
+The main-only image workflow publishes `ghcr.io/pocketcontext/vaultcontext-demo`
+after all native validation gates. `VAULTCONTEXT_DEMO_PUBLISH=true` enables
+publication. `VAULTCONTEXT_DEMO_DEPLOY_ENABLED=true` enables deployment through
+the fixed `vaultcontext-demo` GitHub environment, restricted to `main`.
+`VAULTCONTEXT_DEMO_DEPLOY_PAUSED=true` pauses newly evaluated deployment jobs
+without pausing validation or publication. Let an active deployment finish before
+treating the host as fenced.
 
-Set `CONTEXT_DEPLOY_PAUSED=true` to pause deployment while CI and publication continue.
-Keep the profile intact. Resume only when deployment is intended by setting it to
-`false` or removing it. The guard affects newly evaluated jobs; finish or cancel an
-already running deployment before treating the host as fenced. The existing
-`VAULTCONTEXT_PUBLISH=true` publication gate remains required.
+The environment holds the dedicated `SSH_PRIVATE_KEY` and `SERVER_IP`,
+`SERVER_USER=deploy`, `SSH_KNOWN_HOSTS`. The job checks the current main revision,
+sends an exact image digest/revision request through the restricted SSH key and
+validates the receipt plus public assets and installation contract. See the
+[complete protocol](ci-and-deployment.md); `/up` alone is not a release attestation.
 
-The app-local `deploy/install.py` and `deploy/deploy-vaultcontext.py` are retired
-fail-closed stubs. Do not use them to overwrite once-v2 SSH commands, sudo rules or
-shared dispatcher policy. Provision or change those through the maintained private
-`once-pocketcontext-v2` scaffold; keep its app key scoped to VaultContext.
-
-For code rollback, first record the actual previous immutable image and verify its
-schema/startup compatibility; stop the new process and run the previous S3-capable
-image on the current volume. Do not restore an older database merely to roll back
-code. Historical pre-S3 archives remain recoverable through the old archive-capable
-image, for example the retained migration image
-`ghcr.io/pocketcontext/vaultcontext@sha256:e408d0149ef3dc5f1b17fc7116098a19a61c9498097aeb2969f7d787967d7909`,
-in an isolated environment with reviewed configuration. This refactor deletes no
-archives, remote objects, volumes or replica history.
+The app-local `deploy/install.py` and `deploy/deploy-vaultcontext.py` remain retired
+fail-closed stubs. Manage host helpers through the private deployment scaffold.
+There is no automatic rollback. Before any manual rollback, verify the previous
+image's schema, supervisor and image-namespace compatibility and the pending
+release state. Preserve current data; restoring an older database is a separate
+recovery operation. Historical core VaultContext images and pre-S3 archives are
+not demo rollback targets.
 
 Litestream replication is asynchronous: clean exit alone does not prove final
 remote durability. Verify synchronization and an independent restore. File retention
@@ -135,7 +129,7 @@ To reuse a trusted local MinIO fixture, `VAULTCONTEXT_TEST_MINIO_IMAGE` selects 
 full `sha256:` image ID; otherwise tests build the pinned fixture.
 
 Image CI gates publication on application and container checks; publication still
-requires `VAULTCONTEXT_PUBLISH=true`. The guarded deployment job follows successful
-publication. New
-release evidence belongs in `docs/validation.md`; historical results do not prove
-this changed runtime or a live deployment.
+requires `VAULTCONTEXT_DEMO_PUBLISH=true`. The guarded demo deployment job follows
+successful publication. Record dedicated release evidence separately from the
+inherited core history. Historical results do not prove the new repository
+cutover or a live deployment.
