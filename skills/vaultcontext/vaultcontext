@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["vaultcontext-client @ git+https://github.com/pocketcontext/vaultcontext-demo.git@78e0308abed01c21ffee5ec6b35a2d037c3f6280"]
+# dependencies = ["vaultcontext-client @ git+https://github.com/pocketcontext/vaultcontext-demo.git@1d88e0f4865405a1140a73cf9fbb5675a566cd13"]
 # ///
 """Standalone launcher for the pinned VaultContext client."""
 from vaultcontext_client.cli import main

@@ -18,7 +18,7 @@ and bounded security logs live outside the daily reset.
 The inherited application also requires identity-key signatures for non-demo passphrase
 changes. Old clients fail closed on that operation; install the updated package
 before adopting this server change. The repository launcher pins tested
-client commit `78e0308abed01c21ffee5ec6b35a2d037c3f6280`; that Git-based installation
+client commit `1d88e0f4865405a1140a73cf9fbb5675a566cd13`; that Git-based installation
 uses the public repository without GitHub credentials. Demo visitors install the
 skill from this repository's `main` branch with `npx skills`. Dependencies come from public PyPI.
 The public Docker deployment image includes the server, hooks, frontend, retention
