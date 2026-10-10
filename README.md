@@ -1,6 +1,6 @@
-# VaultContext
+# VaultContext Demo
 
-The `vaultcontext-demo` branch adds an opt-in disposable public demo. See
+This dedicated repository maintains the opt-in disposable public VaultContext demo. See
 [demo operations](docs/demo-operations.md) for its separate persistent contact
 service, reset controls and deployment prerequisites. The UI lives in
 `pb_public/`; serving that directory alone provides a clearly labelled
@@ -15,12 +15,12 @@ and website enrollment must use the same Google account. Sharing and identity re
 disabled in demo mode. All account/vault data is disposable; contact preferences
 and bounded security logs live outside the daily reset.
 
-This branch also requires identity-key signatures for non-demo passphrase
+The inherited application also requires identity-key signatures for non-demo passphrase
 changes. Old clients fail closed on that operation; install the updated package
-before adopting this server change. This branch's repository launcher pins tested
+before adopting this server change. The repository launcher pins tested
 client commit `78e0308abed01c21ffee5ec6b35a2d037c3f6280`; that Git-based installation
 uses the public repository without GitHub credentials. Demo visitors install the
-skill from the explicit demo branch with `npx skills`. Dependencies come from public PyPI.
+skill from this repository's `main` branch with `npx skills`. Dependencies come from public PyPI.
 The public Docker deployment image includes the server, hooks, frontend, retention
 service and the public skill launcher used to identify the tested client revision. Client dependencies are
 installed on the visitor's machine, not into the server runtime.
@@ -34,7 +34,7 @@ or installation archives remain. Existing wheel-backed launchers must be replace
 with the Git-backed skill. Lock active sessions before replacing their launcher.
 
 `/api/demo/status` advertises `installation` with method `skills`, the public
-branch-specific skill source, skill name, and `clientRevision`. The revision is
+dedicated repository skill source, skill name, and `clientRevision`. The revision is
 read from the packaged repository launcher. Missing or malformed launcher metadata
 keeps `clientReady` false; the browser validates the contract before showing setup.
 This is a configured installation contract, not a live probe of GitHub or npm.
@@ -104,13 +104,12 @@ The primary demo path is to paste the website's setup instructions into your cod
 agent. Node.js/npm and uv are prerequisites. From the intended agent workspace:
 
 ```sh
-npx skills add https://github.com/pocketcontext/vaultcontext/tree/vaultcontext-demo/skills/vaultcontext --skill vaultcontext --yes
+npx skills add https://github.com/pocketcontext/vaultcontext-demo/tree/main/skills/vaultcontext --skill vaultcontext --yes
 ```
 
 Add `--agent codex` or `--agent claude-code` to target a specific coding agent.
-Load the installed skill before using its bundled launcher. The explicit branch
-selects the demo-compatible instructions; the short `pocketcontext/vaultcontext`
-source currently selects a different default-branch release. The repository is
+Load the installed skill before using its bundled launcher. This repository
+provides demo-compatible instructions independently of core VaultContext. The repository is
 public and installation needs no GitHub credentials. Enrollment and Google login
 are separate from installation; passphrases stay in the user's private terminal.
 The demo does not host client downloads; use the installed skill launcher.
@@ -198,7 +197,7 @@ uv run --locked python tests/deploy_workflow.py
 
 Container configuration, smoke and populated complete-restore checks gate image publication; see deployment documentation for commands. Real Google browser/provider configuration and independent security review are separate from synthetic tests. Actual verification results and remaining limitations are recorded in `docs/validation.md`.
 
-VaultContext is deployed at `https://vault.pocketcontext.com`; see [release evidence](DEPLOYMENT.md). The source repository and Docker deployment image are public. This demo branch advertises the public Git-backed skill; it does not host client downloads or install the client into the server runtime. The image workflow supports automatic production deployment after successful publication through the `once-pocketcontext-v2` restricted dispatcher. `CONTEXT_DEPLOY_PAUSED=true` pauses deployment without pausing CI or publication; see [deployment controls](docs/deployment.md#single-writer-updates-and-rollback).
+The dedicated demo origin is `https://vault-demo.pocketcontext.com`. The public source repository and image namespace are `pocketcontext/vaultcontext-demo`. This repository advertises the public Git-backed skill and deploys only the demo through the restricted `once-pocketcontext-v2` dispatcher. Core VaultContext production releases remain in the separate `pocketcontext/vaultcontext` repository. See [deployment controls](docs/ci-and-deployment.md) and [demo operations](docs/demo-operations.md).
 
 Identity, OAuth and deployment patterns are adapted from RaiseContext; filtered access and complete-original backup patterns follow AccountContext. Their domain schemas and readers are not copied.
 
@@ -300,3 +299,19 @@ The container uses one Python entrypoint, tini and Litestream; Python execs the
 supervisor and its server child after preparation. Historical archive recovery
 uses the previous pinned image in an isolated environment. Test-only legacy archive
 helpers remain under `tests/` and are excluded from the image. No old archives are deleted.
+
+## Upstream maintenance
+
+This repository preserves VaultContext history and currently carries a full copy
+of the application and client. Core VaultContext remains the upstream for shared
+cryptography, authentication, client and storage fixes. Review upstream changes
+before each demo release, cherry-pick applicable fixes with their original commit
+reference (`git cherry-pick -x`), and record intentionally excluded changes and
+compatibility rationale in the release review. Never blindly merge production
+deployment configuration or relax demo enrollment, reset and sharing restrictions.
+
+Review demo changes to shared code for upstream adoption in the same release
+review, especially security fixes. Validate both applications independently with
+their pinned servers and synthetic data; a passing demo suite does not establish
+core compatibility. Publish package changes before advancing the portable
+launcher pin and verify the copied launcher from an unrelated directory.

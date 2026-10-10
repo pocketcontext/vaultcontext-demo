@@ -15,7 +15,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 REVISION = 'a' * 40
 NEXT_REVISION = 'b' * 40
-IMAGE = 'ghcr.io/pocketcontext/vaultcontext@sha256:' + 'c' * 64
+IMAGE = 'ghcr.io/pocketcontext/vaultcontext-demo@sha256:' + 'c' * 64
 
 
 def fixture_bindings():
@@ -308,6 +308,18 @@ class OnceRuntimeStateTests(unittest.TestCase):
         self.day = ['2026-10-09']
         self.instances = []
         self.addCleanup(self.close_all)
+
+    def test_release_identity_requires_dedicated_repository_digest(self):
+        request = {'image': IMAGE, 'revision': REVISION}
+        self.assertEqual(self.module.spec(request), request)
+        for image in (
+            IMAGE.replace('vaultcontext-demo@', 'vaultcontext@'),
+            'ghcr.io/pocketcontext/vaultcontext-demo:latest',
+            IMAGE.replace('pocketcontext/', 'foreign/'),
+            IMAGE + 'extra',
+        ):
+            with self.subTest(image=image), self.assertRaises(self.module.RuntimeErrorSafe):
+                self.module.spec({**request, 'image': image})
 
     def close_all(self):
         for value in reversed(self.instances):

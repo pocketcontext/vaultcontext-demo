@@ -194,7 +194,7 @@ capabilities are not persisted in browser storage.
 
 ## Coding-agent installation
 
-The public repository skill on `vaultcontext-demo` is the primary agent setup path.
+The public skill at `https://github.com/pocketcontext/vaultcontext-demo/tree/main/skills/vaultcontext` is the primary agent setup path.
 The website copies an instruction prompt containing `npx skills add` with the
 explicit branch/skill URL; it does not run installation itself. Node.js/npm and uv
 are prerequisites. The agent loads the installed skill, uses its pinned launcher,

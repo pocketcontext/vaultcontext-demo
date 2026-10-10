@@ -7,14 +7,14 @@ on:
 permissions:
   contents: read
 
-# Serialize main and demo releases without cancelling an active deployment.
+# Serialize main releases without cancelling an active deployment.
 # Current-branch checks reject stale reruns; GitHub does not guarantee commit order.
 concurrency:
   group: image-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/vaultcontext-demo' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
-  IMAGE: ghcr.io/pocketcontext/vaultcontext
+  IMAGE: ghcr.io/pocketcontext/vaultcontext-demo
 
 jobs:
   # Every branch and pull request: build for the runner's architecture and run the image.
@@ -89,7 +89,7 @@ jobs:
   # Each architecture is built on its own runner and pushed by digest, under no tag, so that two runs
   # close together cannot mix their halves in one manifest.
   build:
-    if: github.event_name != 'pull_request' && ((github.ref == 'refs/heads/main' && vars.VAULTCONTEXT_PUBLISH == 'true') || (github.ref == 'refs/heads/vaultcontext-demo' && vars.VAULTCONTEXT_DEMO_PUBLISH == 'true'))
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.VAULTCONTEXT_DEMO_PUBLISH == 'true'
     needs:
       - check
       - tests
@@ -143,60 +143,9 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # One imagetools call creates both tags from the digests of this run.
-  manifest:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs:
-      - build
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          path: /tmp/digests
-          pattern: digests-*
-          merge-multiple: true
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Require current main revision
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
-          if [[ ! "$head" =~ ^[0-9a-f]{40}$ || "$head" != "$GITHUB_SHA" ]]; then
-            echo 'Refusing stale release: workflow revision is not current main.' >&2
-            exit 1
-          fi
-      - name: Create and push the manifest list
-        working-directory: /tmp/digests
-        run: |
-          set -- *
-          echo "digests of this run: $*"
-          test "$#" -eq 2
-          sources=""
-          for digest in "$@"; do
-            sources="$sources $IMAGE@sha256:$digest"
-          done
-          # shellcheck disable=SC2086 # one argument per digest
-          docker buildx imagetools create \
-            --tag "$IMAGE:latest" \
-            --tag "$IMAGE:sha-${GITHUB_SHA::7}" \
-            --tag "$IMAGE:sha-$GITHUB_SHA" \
-            $sources
-      - name: Show what was published
-        run: docker buildx imagetools inspect "$IMAGE:latest"
-
-  # The demo branch publishes only its own tags. It never enters production deployment.
+  # Publish the dedicated demo repository after every validation gate.
   demo_manifest:
-    if: github.ref == 'refs/heads/vaultcontext-demo' && github.event_name != 'pull_request' && vars.VAULTCONTEXT_DEMO_PUBLISH == 'true'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.VAULTCONTEXT_DEMO_PUBLISH == 'true'
     needs:
       - build
     runs-on: ubuntu-24.04
@@ -223,9 +172,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/vaultcontext-demo" --jq '.object.sha')
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
           if [[ ! "$head" =~ ^[0-9a-f]{40}$ || "$head" != "$GITHUB_SHA" ]]; then
-            echo 'Refusing stale demo release: workflow revision is not current vaultcontext-demo.' >&2
+            echo 'Refusing stale demo release: workflow revision is not current main.' >&2
             exit 1
           fi
       - name: Create and push the demo manifest
@@ -245,8 +194,8 @@ jobs:
           done
           docker buildx imagetools create \
             --metadata-file "$RUNNER_TEMP/demo-manifest.json" \
-            --tag "$IMAGE:demo" \
-            --tag "$IMAGE:demo-sha-$GITHUB_SHA" \
+            --tag "$IMAGE:latest" \
+            --tag "$IMAGE:sha-$GITHUB_SHA" \
             "${sources[@]}"
           digest=$(jq -er '."containerimage.descriptor".digest' "$RUNNER_TEMP/demo-manifest.json")
           if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
@@ -267,7 +216,7 @@ jobs:
           retention-days: 30
 
   demo_deploy:
-    if: github.ref == 'refs/heads/vaultcontext-demo' && github.event_name != 'pull_request' && vars.VAULTCONTEXT_DEMO_DEPLOY_ENABLED == 'true' && vars.VAULTCONTEXT_DEMO_DEPLOY_PAUSED != 'true'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.VAULTCONTEXT_DEMO_DEPLOY_ENABLED == 'true' && vars.VAULTCONTEXT_DEMO_DEPLOY_PAUSED != 'true'
     needs:
       - demo_manifest
     runs-on: ubuntu-24.04
@@ -290,7 +239,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/vaultcontext-demo" --jq '.object.sha')
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
           if [[ ! "$head" =~ ^[0-9a-f]{40}$ || "$head" != "$GITHUB_SHA" ]]; then
             echo 'Refusing stale demo deployment.' >&2
             exit 1
@@ -313,7 +262,7 @@ jobs:
           if not re.fullmatch(r'sha256:[0-9a-f]{64}', digest) or not re.fullmatch(r'[0-9a-f]{40}', revision):
               raise SystemExit('Invalid demo release identity')
           Path(os.environ['RUNNER_TEMP'], 'demo-request.json').write_text(json.dumps({
-              'image': 'ghcr.io/pocketcontext/vaultcontext@' + digest, 'revision': revision}) + '\n')
+              'image': 'ghcr.io/pocketcontext/vaultcontext-demo@' + digest, 'revision': revision}) + '\n')
           PY
           umask 077
           mkdir -p ~/.ssh
@@ -333,7 +282,7 @@ jobs:
               raise SystemExit('Invalid demo release receipt')
           receipt = json.loads(raw)
           expected = {'ready': True, 'revision': os.environ['GITHUB_SHA'],
-                      'image': 'ghcr.io/pocketcontext/vaultcontext@' + os.environ['DEMO_DIGEST']}
+                      'image': 'ghcr.io/pocketcontext/vaultcontext-demo@' + os.environ['DEMO_DIGEST']}
           if receipt != expected or receipt.get('ready') is not True:
               raise SystemExit('Demo release receipt differs from requested revision and digest')
           PY
@@ -361,9 +310,9 @@ jobs:
               if status.get('enabled') is not True or status.get('clientReady') is not True or status.get('generation') != day:
                   raise ValueError('Public demo is not ready for the current UTC generation')
               launcher = Path('skills/vaultcontext/vaultcontext').read_text()
-              pin = re.search(r'vaultcontext\.git@([0-9a-f]{40})', launcher).group(1)
+              pin = re.search(r'vaultcontext-demo\.git@([0-9a-f]{40})', launcher).group(1)
               expected_installation = {'method': 'skills', 'skill': 'vaultcontext',
-                  'source': 'https://github.com/pocketcontext/vaultcontext/tree/vaultcontext-demo/skills/vaultcontext',
+                  'source': 'https://github.com/pocketcontext/vaultcontext-demo/tree/main/skills/vaultcontext',
                   'clientRevision': pin}
               if status.get('installation') != expected_installation or 'downloads' in status:
                   raise ValueError('Unexpected public installation contract')
@@ -391,60 +340,3 @@ jobs:
                   time.sleep(5)
           print('Root demo generation, revision assets, installation and retired paths verified')
           PY
-
-  deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.CONTEXT_DEPLOY_PAUSED != 'true' && vars.COLORS_PROFILE != ''
-    needs:
-      - manifest
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    environment:
-      name: ${{ vars.COLORS_PROFILE }}
-    # Serialize rather than cancel: interrupting a deploy midway is worse than making the next one wait.
-    concurrency:
-      group: deploy-${{ vars.COLORS_PROFILE }}
-      cancel-in-progress: false
-    steps:
-      - name: Require current main revision
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
-          if [[ ! "$head" =~ ^[0-9a-f]{40}$ || "$head" != "$GITHUB_SHA" ]]; then
-            echo 'Refusing stale release: workflow revision is not current main.' >&2
-            exit 1
-          fi
-      - name: Deploy via SSH
-        env:
-          # Only the key is a secret. The address and user are variables, so the logs stay readable.
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SERVER_IP: ${{ vars.SERVER_IP }}
-          SERVER_USER: ${{ vars.SERVER_USER }}
-          SSH_KNOWN_HOSTS: ${{ vars.SSH_KNOWN_HOSTS }}
-        run: |
-          mkdir -p ~/.ssh
-          # shellcheck disable=SC2046
-          eval $(ssh-agent -s)
-          echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
-
-          # Pinned by ONCE at provisioning time, not scanned here. Fail closed.
-          if [ -z "$SSH_KNOWN_HOSTS" ]; then
-            echo "SSH_KNOWN_HOSTS is unset; configure the once-pocketcontext-v2 deployment environment" >&2
-            exit 1
-          fi
-          printf '%s\n' "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
-
-          # The fixed shared dispatcher accepts no remote command or registry credentials.
-          # It resolves latest to a digest; the workflow does not attest the live source revision.
-          test "$SERVER_USER" = deploy
-          ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes "$SERVER_USER@$SERVER_IP" < /dev/null
-      - name: Verify public health
-        run: |
-          # /up executes a database query, so HTTP 200 also checks database availability.
-          curl --fail --silent --show-error \
-            --connect-timeout 10 --max-time 20 \
-            --retry 12 --retry-delay 5 --retry-max-time 180 --retry-all-errors \
-            https://vault.pocketcontext.com/up

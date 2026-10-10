@@ -151,13 +151,13 @@ with sync_playwright() as p:
  assert sum(path=='/api/demo/enroll' for path,_ in calls)==enrollment_count, 'A programmatic submit must also reject stale preferences'
  fail_preferences=False
  # The allowlisted public skill source and tested client revision enable setup.
- installation={'method':'skills','source':'https://github.com/pocketcontext/vaultcontext/tree/vaultcontext-demo/skills/vaultcontext','skill':'vaultcontext','clientRevision':'78e0308abed01c21ffee5ec6b35a2d037c3f6280'}
+ installation={'method':'skills','source':'https://github.com/pocketcontext/vaultcontext-demo/tree/main/skills/vaultcontext','skill':'vaultcontext','clientRevision':'78e0308abed01c21ffee5ec6b35a2d037c3f6280'}
  page.evaluate('localStorage.clear()')
  page.goto('http://demo.test/');page.wait_for_function('document.querySelector("#install-code").textContent.includes("npx skills add")')
  assert page.locator('[data-method]').count()==0
  assert page.locator('#agent-note').get_attribute('hidden') is None
  install=page.locator('#install-code').text_content()
- assert 'https://github.com/pocketcontext/vaultcontext/tree/vaultcontext-demo/skills/vaultcontext --skill vaultcontext --yes' in install
+ assert 'https://github.com/pocketcontext/vaultcontext-demo/tree/main/skills/vaultcontext --skill vaultcontext --yes' in install
  assert 'private terminal' in install and 'same Google account' in install
  assert 'tar -xzf' not in install
  assert '\n\nnpx skills add' in install and r'\n' not in install
@@ -199,7 +199,7 @@ with sync_playwright() as p:
   assert headline['height']<=headline['line']*3+1, f'Headline wraps beyond three lines at {width}px'
  page.set_viewport_size({'width':1440,'height':1000})
  install=page.locator('#install-code').text_content()
- assert 'npx skills add https://github.com/pocketcontext/vaultcontext/tree/vaultcontext-demo/skills/vaultcontext' in install
+ assert 'npx skills add https://github.com/pocketcontext/vaultcontext-demo/tree/main/skills/vaultcontext' in install
  assert 'tar -xzf' not in install
  assert '\n\nnpx skills add' in install and r'\n' not in install
  assert page.locator('#install-code').locator('xpath=../..').locator('.copy').inner_text()=='Copy instructions'

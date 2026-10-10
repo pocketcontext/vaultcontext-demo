@@ -10,7 +10,7 @@
 #   (the same values as the asset digests of the GitHub release API).
 # Debian packages are unpinned and refresh only when the cached APT layer is rebuilt.
 
-FROM ghcr.io/pocketcontext/vaultcontext:base-golang-1.27.1-trixie@sha256:a4d1d139d0b0e7313de2fbe7cf4e27e3b934c164c5c58b33af44af2e9ba2fc4f AS build
+FROM ghcr.io/pocketcontext/vaultcontext-demo:base-golang-1.27.1-trixie@sha256:a4d1d139d0b0e7313de2fbe7cf4e27e3b934c164c5c58b33af44af2e9ba2fc4f AS build
 ARG TARGETARCH
 # Never download another Go toolchain: a go.mod that asks for a newer Go fails the build instead.
 ENV GOTOOLCHAIN=local CGO_ENABLED=1
@@ -53,7 +53,7 @@ RUN go build -trimpath -tags sqlite_math_functions,sqlite_percentile,sqlite_fts5
     && /out/pocketcontext --version
 
 
-FROM ghcr.io/pocketcontext/vaultcontext:base-debian-trixie-20260918-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+FROM ghcr.io/pocketcontext/vaultcontext-demo:base-debian-trixie-20260918-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates tini python3 python3-boto3 nginx \
     && rm -rf /var/lib/apt/lists/* \
@@ -85,5 +85,5 @@ ARG REVISION=unknown
 RUN printf '%s\n' "${REVISION}" > /usr/local/share/vaultcontext-revision
 LABEL org.opencontainers.image.title="VaultContext" \
       org.opencontainers.image.description="Encrypted files operated through a coding agent: PocketContext server, vault migrations and hooks, Litestream replication" \
-      org.opencontainers.image.source="https://github.com/pocketcontext/vaultcontext" \
+      org.opencontainers.image.source="https://github.com/pocketcontext/vaultcontext-demo" \
       org.opencontainers.image.revision="${REVISION}"

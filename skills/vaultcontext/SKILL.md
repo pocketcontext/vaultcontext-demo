@@ -62,8 +62,8 @@ After a generation change, explicitly lock the stale session, sign in, initializ
 a fresh identity and unlock privately. Never silently replace fingerprint pins.
 Sharing, Keychain enrollment and passphrase changes are unavailable in the demo.
 The demo website's coding-agent instructions install this skill with `npx skills`
-from the explicit `vaultcontext-demo` branch. The repository default branch may
-carry a different release; use the demo branch for demo setup. Read the installed
+from `https://github.com/pocketcontext/vaultcontext-demo/tree/main/skills/vaultcontext`.
+This dedicated repository releases independently of core VaultContext. Read the installed
 launcher for the exact pinned client revision rather than assuming the branch
 head is the runtime version. Check the installed launcher pin against the
 client revision advertised by the demo setup prompt; stop if they differ. The

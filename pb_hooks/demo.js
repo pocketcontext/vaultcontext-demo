@@ -99,10 +99,10 @@ function publicInstallation(app) {
  try {
   const bytes=$os.readFile('skills/vaultcontext/vaultcontext');
   if(bytes.length>4096)throw new Error('launcher too large');
-  const matches=toString(bytes).match(/vaultcontext-client @ git\+https:\/\/github\.com\/pocketcontext\/vaultcontext\.git@([a-f0-9]{40})"/g);
+  const matches=toString(bytes).match(/vaultcontext-client @ git\+https:\/\/github\.com\/pocketcontext\/vaultcontext-demo\.git@([a-f0-9]{40})"/g);
   if(!matches || matches.length!==1)throw new Error('invalid client pin');
   const revision=matches[0].match(/@([a-f0-9]{40})"$/)[1];
-  result={method:'skills',source:'https://github.com/pocketcontext/vaultcontext/tree/vaultcontext-demo/skills/vaultcontext',skill:'vaultcontext',clientRevision:revision};
+  result={method:'skills',source:'https://github.com/pocketcontext/vaultcontext-demo/tree/main/skills/vaultcontext',skill:'vaultcontext',clientRevision:revision};
  } catch(_) { result=false; }
  return result;
 }

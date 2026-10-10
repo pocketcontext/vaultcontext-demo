@@ -68,7 +68,7 @@ const installExample = byId('install-code').textContent;
 // Installation is available only when the backend advertises the public skill contract.
 function checkedInstallation(data) {
   const installation = data?.installation;
-  if (data?.clientReady !== true || installation?.method !== 'skills' || installation.source !== 'https://github.com/pocketcontext/vaultcontext/tree/vaultcontext-demo/skills/vaultcontext' || installation.skill !== 'vaultcontext' || !/^[a-f0-9]{40}$/.test(installation.clientRevision)) return null;
+  if (data?.clientReady !== true || installation?.method !== 'skills' || installation.source !== 'https://github.com/pocketcontext/vaultcontext-demo/tree/main/skills/vaultcontext' || installation.skill !== 'vaultcontext' || !/^[a-f0-9]{40}$/.test(installation.clientRevision)) return null;
   return installation;
 }
 function clientAvailable() { return !!checkedInstallation(live); }

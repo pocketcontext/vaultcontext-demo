@@ -26,7 +26,7 @@ from reset import ResetError, atomic_json, safe_path
 PREFIX = 'vaultcontext-demo-'
 LABEL = 'com.pocketcontext.demo.'
 ROLES = ('network', 'retention', 'gate', 'app', 'init')
-APP_IMAGE = re.compile(r'ghcr\.io/pocketcontext/vaultcontext@sha256:[a-f0-9]{64}')
+APP_IMAGE = re.compile(r'ghcr\.io/pocketcontext/vaultcontext-demo@sha256:[a-f0-9]{64}')
 GATE_IMAGE = re.compile(r'(?:docker\.io/library/)?nginx@sha256:[a-f0-9]{64}')
 PRIMARY = {'VAULTCONTEXT_S3_' + name for name in ('BUCKET', 'ENDPOINT', 'REGION', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')}
 REPLICA = {'LITESTREAM_' + name for name in ('BUCKET', 'ENDPOINT', 'REGION', 'PATH', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')}

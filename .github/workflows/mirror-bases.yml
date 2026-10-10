@@ -2,7 +2,7 @@ name: Mirror pinned base images
 on:
   workflow_dispatch:
   push:
-    branches: [vaultcontext-demo]
+    branches: [main]
     paths: [.github/workflows/mirror-bases.yml]
 
 permissions:
@@ -10,12 +10,12 @@ permissions:
   packages: write
 
 concurrency:
-  group: mirror-vaultcontext-bases
+  group: mirror-vaultcontext-demo-bases
   cancel-in-progress: false
 
 jobs:
   mirror:
-    if: github.ref == 'refs/heads/vaultcontext-demo'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -37,7 +37,7 @@ jobs:
             # Docker's ECR Public distribution carries the same pinned index.
             # Alternate registries on retry; never substitute another digest.
             local source
-            local destination="docker://ghcr.io/pocketcontext/vaultcontext:base-$name-$version"
+            local destination="docker://ghcr.io/pocketcontext/vaultcontext-demo:base-$name-$version"
             local copied=false
             for attempt in 1 2 3 4 5 6; do
               if (( attempt % 2 )); then

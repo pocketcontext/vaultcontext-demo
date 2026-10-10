@@ -16,7 +16,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'deploy/demo'))
 import docker_lifecycle as module
 
-IMAGE='ghcr.io/pocketcontext/vaultcontext@sha256:'+'a'*64
+IMAGE='ghcr.io/pocketcontext/vaultcontext-demo@sha256:'+'a'*64
 GATE='nginx@sha256:'+'b'*64
 
 class FakeDocker:
@@ -160,7 +160,7 @@ class DockerDemoTests(unittest.TestCase):
         self.assertFalse(any(cmd[0]=='create' for cmd in self.docker.commands))
 
     def test_immutable_images_and_env_allowlist(self):
-        raw=json.loads((self.root/'control/docker.json').read_text());raw['image']='ghcr.io/pocketcontext/vaultcontext:latest'
+        raw=json.loads((self.root/'control/docker.json').read_text());raw['image']='ghcr.io/pocketcontext/vaultcontext-demo:latest'
         (self.root/'control/docker.json').write_text(json.dumps(raw))
         with self.assertRaises(module.ResetError):module.load(self.root)
         with self.env_file.open('a') as stream:stream.write('VAULTCONTEXT_SUPERUSER_PASSWORD=forbidden\n')

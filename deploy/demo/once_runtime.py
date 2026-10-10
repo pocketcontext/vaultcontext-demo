@@ -24,7 +24,7 @@ import threading
 import time
 from urllib.request import Request,urlopen
 
-IMAGE=re.compile(r'ghcr\.io/pocketcontext/vaultcontext@sha256:[a-f0-9]{64}')
+IMAGE=re.compile(r'ghcr\.io/pocketcontext/vaultcontext-demo@sha256:[a-f0-9]{64}')
 REVISION=re.compile('[a-f0-9]{40}')
 PRIMARY={'VAULTCONTEXT_S3_'+key for key in ('BUCKET','ENDPOINT','REGION','ACCESS_KEY_ID','SECRET_ACCESS_KEY')}
 REPLICA={'LITESTREAM_'+key for key in ('BUCKET','ENDPOINT','REGION','PATH','ACCESS_KEY_ID','SECRET_ACCESS_KEY')}

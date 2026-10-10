@@ -500,7 +500,7 @@ Google login authenticates your account; unlock decrypts your keys.
 Passphrases require an interactive terminal. There are no recovery keys.
 Commands return JSON except cat, which writes exact file bytes to stdout.
 Run vaultcontext COMMAND --help for arguments and examples.
-Manual: https://github.com/pocketcontext/vaultcontext/blob/main/skills/vaultcontext/references/workflows.md""")
+Manual: https://github.com/pocketcontext/vaultcontext-demo/blob/main/skills/vaultcontext/references/workflows.md""")
     commands = p.add_subparsers(prog=p.prog, dest='command', required=True, metavar='COMMAND',
                                help=argparse.SUPPRESS)
     summaries = {}

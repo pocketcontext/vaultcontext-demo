@@ -18,7 +18,7 @@ for(const mode of ['valid','missing','oversized','unpinned','wrong-repository','
   if(mode==='missing')throw Error('missing');
   if(mode==='oversized')return 'x'.repeat(4097);
   if(mode==='unpinned')return launcher.replace(/git@([a-f0-9]{40})/, 'git@main');
-  if(mode==='wrong-repository')return launcher.replace('github.com/pocketcontext/vaultcontext.git','github.com/other/client.git');
+  if(mode==='wrong-repository')return launcher.replace('github.com/pocketcontext/vaultcontext-demo.git','github.com/other/client.git');
   if(mode==='ambiguous')return launcher+'\n'+launcher;
   return launcher;
  }}};
@@ -27,7 +27,7 @@ for(const mode of ['valid','missing','oversized','unpinned','wrong-repository','
  assert.equal(!!result,mode==='valid',mode);
  if(result){
   assert.equal(result.method,'skills');assert.equal(result.skill,'vaultcontext');
-  assert.equal(result.source,'https://github.com/pocketcontext/vaultcontext/tree/vaultcontext-demo/skills/vaultcontext');
+  assert.equal(result.source,'https://github.com/pocketcontext/vaultcontext-demo/tree/main/skills/vaultcontext');
   assert.equal(result.clientRevision,launcher.match(/git@([a-f0-9]{40})/)[1]);
  }
 }
