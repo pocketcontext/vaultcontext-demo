@@ -162,6 +162,10 @@ The manifests attest verified final database state; they are not a distributed f
 
 ## Operator details for the test
 
+The current public contact for privacy requests and support is `info@pocketcontext.com` (updated 10 October 2026). It is a Google Group intended for the operators. External delivery was observed, but test messages reached the receiving mailbox’s Spam folder; operators must monitor Spam while that classification is investigated. This contact update preserves the existing acceptance version.
+
+### Original operator details
+
 The user supplied Alberto Miorin (an individual, not an incorporated company), alberto.miorin@pocketcontext.com, and the correspondence address c/o Engelnest Coworking Space and Event Venue, Wilhelm-Kabus-Straße 24, 10829 Berlin, Germany. The user authorized proceeding with the test after stating that permission to publish/use the venue address has not been confirmed. This is an unresolved address verification issue, not an attestation of a registered office or legal compliance.
 
 Contact replica retention checks use pinned Litestream 0.5.17: native snapshot
