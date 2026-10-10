@@ -25,21 +25,21 @@ class DeploymentTests(unittest.TestCase):
     def test_demo_cd_has_independent_gates_and_no_production_path(self):
         self.assertEqual(DEMO_DEPLOY.splitlines()[0].strip(), "if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.VAULTCONTEXT_DEMO_DEPLOY_ENABLED == 'true' && vars.VAULTCONTEXT_DEMO_DEPLOY_PAUSED != 'true'")
         self.assertIn('    needs:\n      - demo_manifest\n', DEMO_DEPLOY)
-        self.assertIn('    environment:\n      name: vaultcontext-demo\n', DEMO_DEPLOY)
+        self.assertIn('    environment:\n      name: pocketdeploy-v1\n', DEMO_DEPLOY)
         self.assertIn('      group: deploy-vaultcontext-demo\n      cancel-in-progress: false', DEMO_DEPLOY)
-        self.assertIn('DEMO_DIGEST: ${{ needs.demo_manifest.outputs.digest }}', DEMO_DEPLOY)
+        self.assertNotIn('DEMO_DIGEST', DEMO_DEPLOY)
         self.assertNotIn('always()', DEMO_DEPLOY)
         self.assertNotIn(':latest', DEMO_DEPLOY)
         self.assertNotIn('COLORS_PROFILE', DEMO_DEPLOY)
-        self.assertLess(DEMO_DEPLOY.index('Require current demo deployment revision'), DEMO_DEPLOY.index('Deploy exact demo digest'))
+        self.assertLess(DEMO_DEPLOY.index('Require current demo deployment revision'), DEMO_DEPLOY.index('Reconcile configured demo'))
         self.assertNotIn('\n  deploy:', WORKFLOW)
         self.assertNotIn('\n  manifest:', WORKFLOW)
         self.assertNotIn('vars.VAULTCONTEXT_PUBLISH', WORKFLOW)
         self.assertNotIn('vars.COLORS_PROFILE', WORKFLOW)
         self.assertIn('IMAGE: ghcr.io/pocketcontext/vaultcontext-demo', WORKFLOW)
 
-    def test_demo_ssh_exact_request_receipt_and_failures(self):
-        for mode in ('success', 'hostkey', 'digest', 'user', 'ssh', 'receipt'):
+    def test_demo_ssh_trigger_only_receipt_and_failures(self):
+        for mode in ('success', 'hostkey', 'host', 'user', 'ssh', 'receipt'):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 for name in ('ssh-agent', 'ssh-add', 'ssh'):
@@ -49,27 +49,25 @@ class DeploymentTests(unittest.TestCase):
                         'name=Path(sys.argv[0]).name\n'
                         'if name=="ssh-add": sys.stdin.read()\n'
                         'if name=="ssh":\n'
-                        ' request=json.load(sys.stdin)\n'
+                        ' request=sys.stdin.read()\n'
                         ' Path(os.environ["TEST_CALL"]).write_text(json.dumps({"args":sys.argv[1:],"request":request}))\n'
                         ' if os.environ["TEST_MODE"]=="ssh":sys.exit(17)\n'
-                        ' if os.environ["TEST_MODE"]=="receipt":request["revision"]="b"*40\n'
-                        ' print(json.dumps({**request,"ready":True}))\n')
+                        ' print(json.dumps({"ok":os.environ["TEST_MODE"]!="receipt"}))\n')
                     path.chmod(0o700)
                 env = dict(os.environ, HOME=str(root), PATH=str(root)+':'+os.environ['PATH'],
-                           RUNNER_TEMP=str(root), SERVER_USER='wrong' if mode=='user' else 'deploy',
-                           SERVER_IP='192.0.2.1', SSH_PRIVATE_KEY='synthetic-secret',
+                           RUNNER_TEMP=str(root), SERVER_USER='-bad' if mode=='user' else 'ubuntu',
+                           SERVER_IP='bad host' if mode=='host' else '192.0.2.1', SSH_PRIVATE_KEY='synthetic-secret',
                            SSH_KNOWN_HOSTS='' if mode=='hostkey' else 'synthetic-host-key',
-                           DEMO_DIGEST='invalid' if mode=='digest' else 'sha256:'+'a'*64,
                            GITHUB_SHA='c'*40, TEST_CALL=str(root/'call'), TEST_MODE=mode)
-                result = subprocess.run(['bash','-c',demo_script('Deploy exact demo digest over restricted SSH', DEMO_DEPLOY)], env=env, capture_output=True, text=True)
+                result = subprocess.run(['bash','-c',demo_script('Reconcile configured demo over restricted SSH', DEMO_DEPLOY)], env=env, capture_output=True, text=True)
                 self.assertEqual(result.returncode==0, mode=='success', result.stderr)
                 self.assertNotIn('synthetic-secret',result.stdout+result.stderr)
-                if mode in ('hostkey','digest','user'):
+                if mode in ('hostkey','host','user'):
                     self.assertFalse((root/'call').exists())
                 else:
                     call=json.loads((root/'call').read_text())
-                    self.assertEqual(call['args'],['-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=15','deploy@192.0.2.1'])
-                    self.assertEqual(call['request'],{'revision':'c'*40,'image':'ghcr.io/pocketcontext/vaultcontext-demo@sha256:'+'a'*64})
+                    self.assertEqual(call['args'],['-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=15','ubuntu@192.0.2.1'])
+                    self.assertEqual(call['request'], '')
 
     def test_public_attestation_rejects_stale_assets_contracts_and_old_routes(self):
         import io
@@ -77,32 +75,45 @@ class DeploymentTests(unittest.TestCase):
         from unittest.mock import patch
         from datetime import datetime, timezone
         from urllib.error import HTTPError
-        program=demo_script('Attest root demo assets and installation',DEMO_DEPLOY).split("python3 - <<'PY'\n",1)[1].rsplit('\nPY',1)[0]
+        program=demo_script('Verify running demo revision, assets and installation',DEMO_DEPLOY).split("python3 - <<'PY'\n",1)[1].rsplit('\nPY',1)[0]
         origin='https://vault-demo.pocketcontext.com'
         pin=re.search(r'vaultcontext-demo\.git@([0-9a-f]{40})',(ROOT/'skills/vaultcontext/vaultcontext').read_text()).group(1)
-        for mode in ('success','generation','asset','pin','foreign','unready','legacy'):
+        for mode in ('success','generation','asset','pin','foreign','unready','legacy','revision','changed','redirect'):
             with self.subTest(mode=mode):
                 installation={'method':'skills','skill':'vaultcontext',
                     'source':'https://github.com/pocketcontext/vaultcontext-demo/tree/main/skills/vaultcontext',
                     'clientRevision':pin}
                 if mode=='foreign':installation['source']='https://foreign.example/skill'
                 if mode=='pin':installation['clientRevision']='0'*40
-                responses={}
+                revision='d'*40  # Deliberately differs from the triggering checkout.
+                source='https://raw.githubusercontent.com/pocketcontext/vaultcontext-demo/'+revision
+                responses={'/up':json.dumps({'ready':True,'revision':'invalid' if mode=='revision' else revision}).encode()}
+                source_responses={'/skills/vaultcontext/vaultcontext':(ROOT/'skills/vaultcontext/vaultcontext').read_bytes()}
                 for path,name in (('/','index.html'),('/app.js','app.js'),('/styles.css','styles.css'),
                                   ('/terms/','terms/index.html'),('/privacy/','privacy/index.html'),
                                   ('/vendor/pocketbase.es.mjs','vendor/pocketbase.es.mjs')):
                     responses[path]=(ROOT/'pb_public'/name).read_bytes()
+                    source_responses['/pb_public/'+name]=responses[path]
                 if mode=='asset':responses['/app.js']=b'stale'
                 if mode=='legacy':responses['/demo/']=b'old'
                 status={'enabled':True,'clientReady':mode!='unready','generation':'2000-01-01' if mode=='generation' else datetime.now(timezone.utc).date().isoformat(),'installation':installation}
                 responses['/api/demo/status']=json.dumps(status).encode()
+                runtime_reads=0
                 def fetch(request,timeout):
+                    nonlocal runtime_reads
                     self.assertEqual(request.get_header('User-agent'),'VaultContext-Demo-Release-Check/1.0')
                     url=request.full_url
-                    self.assertTrue(url.startswith(origin+'/'))
-                    path=url.removeprefix(origin)
-                    if path not in responses:raise HTTPError(url,404,'Not found',{},None)
-                    data=io.BytesIO(responses[path]);data.status=200;data.geturl=lambda:url
+                    base=source if url.startswith(source+'/') else origin
+                    self.assertTrue(url.startswith(base+'/'))
+                    path=url.removeprefix(base)
+                    mapping=source_responses if base==source else responses
+                    if path not in mapping:raise HTTPError(url,404,'Not found',{},None)
+                    body=mapping[path]
+                    if path=='/up':
+                        runtime_reads+=1
+                        if mode=='changed' and runtime_reads%2==0:
+                            body=json.dumps({'ready':True,'revision':'e'*40}).encode()
+                    data=io.BytesIO(body);data.status=200;data.geturl=lambda:'https://foreign.example/' if mode=='redirect' else url
                     return data
                 with patch('urllib.request.urlopen',side_effect=fetch),patch('time.sleep'),patch('builtins.print'):
                     original=os.getcwd();os.chdir(ROOT)
@@ -190,6 +201,8 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn('runner: ubuntu-24.04', check)
         self.assertIn('python3 docker/once_smoke.py --image vaultcontext:ci', check)
         self.assertIn('-p test_demo_once_runtime.py', check)
+        self.assertIn('-p test_demo_standard_runtime.py', check)
+        self.assertIn('python docker/standard_demo_smoke.py --image vaultcontext:ci', check)
         for mode in (' config --image ', ' smoke --image '):
             self.assertIn(mode, check)
         self.assertTrue(' restore --image ' in check or 'docker/object_storage_smoke.py' in check)

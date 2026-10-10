@@ -197,7 +197,7 @@ uv run --locked python tests/deploy_workflow.py
 
 Container configuration, smoke and populated complete-restore checks gate image publication; see deployment documentation for commands. Real Google browser/provider configuration and independent security review are separate from synthetic tests. Actual verification results and remaining limitations are recorded in `docs/validation.md`.
 
-The dedicated demo origin is `https://vault-demo.pocketcontext.com`. The public source repository and image namespace are `pocketcontext/vaultcontext-demo`. This repository advertises the public Git-backed skill and deploys only the demo through the restricted `once-pocketcontext-v2` dispatcher. Core VaultContext production releases remain in the separate `pocketcontext/vaultcontext` repository. See [deployment controls](docs/ci-and-deployment.md) and [demo operations](docs/demo-operations.md).
+The dedicated demo origin is `https://vault-demo.pocketcontext.com`. The public source repository and image namespace are `pocketcontext/vaultcontext-demo`. This repository advertises the public Git-backed skill. The new delivery path uses standard PocketDeploy stop-first updates and restricted SSH triggers, with the lifecycle owned by this application's Go supervisor and storage worker. It requires explicit adoption of the existing deployment before activation; changing the workflow is not evidence of a completed cutover. Core VaultContext production releases remain in the separate `pocketcontext/vaultcontext` repository. See [deployment controls](docs/ci-and-deployment.md), [supervisor architecture](docs/standard-supervisor.md) and [demo operations](docs/demo-operations.md).
 
 Identity, OAuth and deployment patterns are adapted from RaiseContext; filtered access and complete-original backup patterns follow AccountContext. Their domain schemas and readers are not copied.
 
@@ -295,8 +295,11 @@ startup refuses a missing replica. Never initialize an existing deployment or a
 recovery volume. Interrupted initialization leaves `initialization.pending` and
 blocks startup; preserve it for investigation. See [deployment commands](docs/deployment.md).
 
-The container uses one Python entrypoint, tini and Litestream; Python execs the
-supervisor and its server child after preparation. Historical archive recovery
+The container uses tini and a Python entrypoint. In ONCE demo mode the entrypoint
+executes the application-owned Go supervisor, which controls a Python storage
+worker and bounded graceful shutdown. The worker retains the tested database,
+contact and Litestream helpers; PocketContext remains a separately pinned child.
+Historical archive recovery
 uses the previous pinned image in an isolated environment. Test-only legacy archive
 helpers remain under `tests/` and are excluded from the image. No old archives are deleted.
 

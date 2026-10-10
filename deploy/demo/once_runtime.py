@@ -126,7 +126,7 @@ class Backend:
         process=self.processes.get(name)
         if process is None:return
         if process.poll() is None:process.terminate()
-        try:code=process.wait(timeout=360)
+        try:code=process.wait(timeout=30 if name=='gate' else 360)
         except subprocess.TimeoutExpired:raise RuntimeErrorSafe('child drain timed out') from None
         self.processes.pop(name,None)
         if code not in (0,-signal.SIGTERM):raise RuntimeErrorSafe('child did not exit cleanly')
@@ -174,12 +174,25 @@ error_log /dev/null; events { worker_connections 1024; }
 http { access_log off; client_body_temp_path /tmp/client; proxy_temp_path /tmp/proxy;
 fastcgi_temp_path /tmp/fastcgi; uwsgi_temp_path /tmp/uwsgi; scgi_temp_path /tmp/scgi;
 server { listen 80; absolute_redirect off; client_max_body_size 14m;
-location = /up { add_header Cache-Control "no-store" always; return 200; }
+location = /up { add_header Cache-Control "no-store" always; proxy_pass http://127.0.0.1:8782/ready; }
 '''+route+'\n} }\n'
         path=self.root/'control/nginx.conf';path.write_text(config);path.chmod(0o600)
         env={'PATH':'/usr/sbin:/usr/bin:/bin'}
         self.execute([self.nginx,'-t','-c',str(path)],env,30)
         self.launch('gate',[self.nginx,'-c',str(path),'-g','daemon off;'],env)
+    def require_empty_primary(self):
+        # Initialization is not disaster recovery. Never erase retained ciphertext.
+        import boto3
+        from botocore.config import Config
+        settings={name:self.bindings['VAULTCONTEXT_S3_'+name] for name in ('BUCKET','ENDPOINT','REGION','ACCESS_KEY_ID','SECRET_ACCESS_KEY')}
+        if not settings['ENDPOINT'].startswith('https://'):raise RuntimeErrorSafe('primary storage requires HTTPS')
+        client=boto3.client('s3',endpoint_url=settings['ENDPOINT'],region_name=settings['REGION'],
+            aws_access_key_id=settings['ACCESS_KEY_ID'],aws_secret_access_key=settings['SECRET_ACCESS_KEY'],
+            config=Config(connect_timeout=10,read_timeout=30,retries={'max_attempts':3},s3={'addressing_style':'path'}))
+        try:
+            if client.list_objects_v2(Bucket=settings['BUCKET'],MaxKeys=1).get('Contents') or client.list_multipart_uploads(Bucket=settings['BUCKET'],MaxUploads=1).get('Uploads'):
+                raise RuntimeErrorSafe('fresh initialization requires empty primary storage')
+        finally:client.close()
     def purge_ephemeral(self):
         reset=load_module('once_reset','/usr/local/lib/vaultcontext-demo/reset.py')
         old={key:os.environ.get(key) for key in PRIMARY|REPLICA}
@@ -201,14 +214,18 @@ location = /up { add_header Cache-Control "no-store" always; return 200; }
         if errors:raise RuntimeErrorSafe('children failed to drain')
 
 class Runtime:
-    def __init__(self,root,revision,backend,clock=utc_day):
+    def __init__(self,root,revision,backend,clock=utc_day,compatibility=None):
         if not REVISION.fullmatch(revision):raise RuntimeErrorSafe('immutable build revision required')
         self.root=Path(root).absolute();self.revision=revision;self.backend=backend;self.clock=clock
+        self.compatibility=compatibility
         self.control=self.root/'control';self.pending=self.control/'release-pending.json';self.state_file=self.control/'state.json'
         self.ready=False;self.phase='unconfigured';self.generation=None;self.image=None;self.bindings=None;self.lock=None
         self.mutex=threading.RLock();self.stop_event=threading.Event();self.on_locked=None;self.minute=lambda:datetime.now(timezone.utc).hour*60+datetime.now(timezone.utc).minute
     def paths(self):return [self.root/'runtime/pb_data/data.db',self.root/'runtime/pb_data/auxiliary.db',self.root/'persistent/contacts.db']
-    def persist(self):atomic(self.state_file,{'generation':self.generation,'image':self.image,'revision':self.revision})
+    def persist(self):
+        state={'generation':self.generation,'image':self.image,'revision':self.revision}
+        if self.compatibility:state['schema']=self.compatibility['schema']
+        atomic(self.state_file,state)
     def date_valid(self):
         if self.generation!=self.clock():raise RuntimeErrorSafe('generation expired')
     def policy_valid(self):
@@ -217,6 +234,15 @@ class Runtime:
             if db.execute("SELECT enabled,generation FROM demo_policy WHERE id='demopolicy00001'").fetchone()!=(1,self.generation):raise RuntimeErrorSafe('generation policy differs')
     def baseline(self):return [database_snapshot(path) for path in self.paths()]
     def verify_baseline(self,baseline):
+        if not isinstance(baseline,list) or len(baseline)!=len(self.paths()):raise RuntimeErrorSafe('complete three-database baseline required')
+        for before in baseline:
+            if not isinstance(before,dict) or set(before)!={'columns','hashes'} or not isinstance(before['columns'],dict) or not isinstance(before['hashes'],dict) or set(before['columns'])!=set(before['hashes']):
+                raise RuntimeErrorSafe('invalid preservation baseline')
+            if not before['columns']:raise RuntimeErrorSafe('empty preservation baseline')
+            for name,fields in before['columns'].items():
+                if not isinstance(name,str) or not isinstance(fields,list) or not fields or any(not isinstance(field,str) for field in fields):raise RuntimeErrorSafe('invalid baseline columns')
+                counts=before['hashes'][name]
+                if not isinstance(counts,dict) or any(not re.fullmatch('[a-f0-9]{64}',digest) or type(count)!=int or count<1 for digest,count in counts.items()):raise RuntimeErrorSafe('invalid baseline records')
         for path,before in zip(self.paths(),baseline):
             after=database_snapshot(path,before['columns'])
             if any(Counter(before['hashes'][table])-Counter(after['hashes'][table]) for table in before['hashes']):raise RuntimeErrorSafe('previous records changed or disappeared')
@@ -237,22 +263,82 @@ class Runtime:
             state=None
             if (self.control/'runtime.json').exists():
                 self.bindings=validate_bindings(private_json(self.control/'runtime.json'));self.backend.configure(self.bindings)
+            if self.compatibility and self.bindings is None and (self.state_file.exists() or any(path.exists() for path in self.paths()) or any((self.control/name).exists() for name in ('upgrade-pending.json','release-pending.json','reset-pending.json','adoption-pending.json'))):
+                raise RuntimeErrorSafe('existing deployment has lost its private configuration')
+            supplied={key:os.environ[key] for key in REQUIRED|OPTIONAL if key in os.environ}
+            if supplied:
+                validate_bindings(supplied)
+                if self.bindings is not None and supplied!=self.bindings:
+                    raise RuntimeErrorSafe('environment differs from bound volume configuration')
+                if self.bindings is None:
+                    atomic(self.control/'runtime.json',supplied);self.bindings=supplied;self.backend.configure(supplied)
             if self.state_file.exists():
-                state=private_json(self.state_file);self.generation=state['generation'];self.image=state['image']
+                state=private_json(self.state_file)
+                if not isinstance(state,dict) or set(state) not in ({'generation','image','revision'},{'generation','image','revision','schema'}) or not isinstance(state.get('generation'),str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}',state['generation']) or not isinstance(state.get('revision'),str) or not REVISION.fullmatch(state['revision']):raise RuntimeErrorSafe('invalid durable state')
+                if state['image'] is not None and (not isinstance(state['image'],str) or not IMAGE.fullmatch(state['image'])):raise RuntimeErrorSafe('invalid durable image')
+                if 'schema' in state and (not isinstance(state['schema'],str) or not re.fullmatch('[a-f0-9]{64}',state['schema'])):raise RuntimeErrorSafe('invalid durable schema')
+                self.generation=state['generation'];self.image=state['image']
+            if self.compatibility and state is None and (any(path.exists() for path in self.paths()) or (self.control/'upgrade-pending.json').exists()):
+                self.phase='blocked';return self.status()
             if (self.control/'adoption-pending.json').exists() or (self.control/'reset-pending.json').exists():self.phase='blocked';return self.status()
             if self.pending.exists():
+                if self.compatibility:self.phase='blocked';return self.status()
                 pending=private_json(self.pending)
                 if pending['target']['revision']!=self.revision or pending['phase'] not in ('prepared','validated') or self.generation!=self.clock():self.phase='blocked';return self.status()
                 self.image=pending['target']['image'];self.phase='candidate'
                 try:self.start_writers();self.verify_baseline(private_json(self.control/'release-baseline.json'))
                 except BaseException:self.drain();self.phase='blocked';raise
                 pending['phase']='validated';atomic(self.pending,pending);self.phase='validated';return self.status()
+            if self.compatibility and state:
+                return self.standard_start(state)
             if state and state['revision']!=self.revision:self.phase='blocked';return self.status()
             if self.bindings and all(path.exists() for path in self.paths()):
                 if self.generation==self.clock():self.start_writers();self.open_gate()
                 else:self.reset_day()
             elif self.bindings:self.phase='awaiting-adoption'
             return self.status()
+    def standard_start(self,state):
+        """Only declared-compatible revisions can replace the stopped application.
+
+        A journal in 'starting' is deliberately not replayed: candidate migrations
+        may have committed. Preserve it for explicit recovery, never roll back.
+        """
+        journal=self.control/'upgrade-pending.json'
+        compatible=(state.get('schema') in self.compatibility['acceptSchemas'] or
+                    ('schema' not in state and state['revision'] in self.compatibility['acceptLegacyRevisions']))
+        if not compatible or not self.bindings or not all(path.exists() for path in self.paths()):
+            self.phase='blocked';return self.status()
+        if journal.exists():
+            pending=private_json(journal)
+            if not isinstance(pending,dict) or set(pending)!={'format','source','target','schema','phase','baseline'} or pending.get('format')!=1 or not isinstance(pending.get('source'),str) or not REVISION.fullmatch(pending['source']):
+                raise RuntimeErrorSafe('invalid upgrade journal')
+            self.verify_baseline(pending['baseline'])
+            if pending.get('target')!=self.revision or pending.get('schema')!=self.compatibility['schema'] or pending.get('phase') not in ('prepared','validated'):
+                self.phase='blocked';return self.status()
+        else:
+            pending={'format':1,'source':state['revision'],'target':self.revision,'schema':self.compatibility['schema'],'phase':'prepared','baseline':self.baseline()}
+            atomic(journal,pending)
+        self.image=None  # Image selection belongs to the container manager.
+        try:
+            # An old UTC generation is disposed only after compatibility has passed.
+            # Reset has its own durable fence and retains the contacts database.
+            if self.generation!=self.clock():
+                pending['phase']='starting';atomic(journal,pending)
+                self.reset_day()
+                # Disposable tables changed deliberately; retained contacts must survive.
+                after=self.baseline()
+                before=pending['baseline'][2]
+                contact=database_snapshot(self.paths()[2],before['columns'])
+                if any(Counter(before['hashes'][table])-Counter(contact['hashes'][table]) for table in before['hashes']):raise RuntimeErrorSafe('retained contact records changed during upgrade reset')
+                pending['baseline']=after
+            else:
+                pending['phase']='starting';atomic(journal,pending)
+                self.start_writers();self.verify_baseline(pending['baseline'])
+            pending['phase']='validated';atomic(journal,pending)
+            self.persist();remove(journal);self.open_gate()
+            return self.status()
+        except BaseException:
+            self.drain();self.phase='blocked';raise
     def configure(self,bindings):
         with self.mutex:
             if self.bindings is not None or any(path.exists() for path in self.paths()):raise RuntimeErrorSafe('configuration is already bound')
@@ -261,6 +347,7 @@ class Runtime:
     def wait_health(self):
         deadline=time.monotonic()+360
         while not self.backend.healthy():
+            if self.stop_event.is_set():raise RuntimeErrorSafe('termination requested during startup')
             self.date_valid()
             if time.monotonic()>deadline:raise RuntimeErrorSafe('replicated application readiness failed')
             time.sleep(.2)
@@ -275,11 +362,15 @@ class Runtime:
             except Exception:errors.append(True)
         if errors:raise RuntimeErrorSafe('writer drain failed')
     def open_gate(self):
-        self.policy_valid();self.persist();self.backend.gate(True);self.date_valid();self.ready=True;self.phase='active'
+        if self.stop_event.is_set():raise RuntimeErrorSafe('termination requested before readiness')
+        self.policy_valid();self.persist()
+        if (self.control/'upgrade-pending.json').exists():return
+        self.backend.gate(True);self.date_valid();self.ready=True;self.phase='active'
     def initialize(self):
         with self.mutex:
             self.configured()
-            if any(path.exists() for path in self.paths()) or self.pending.exists():raise RuntimeErrorSafe('initialization requires a genuinely empty installation')
+            if self.state_file.exists() or any(path.exists() for path in self.paths()) or any((self.control/name).exists() for name in ('release-pending.json','upgrade-pending.json','reset-pending.json','adoption-pending.json')):raise RuntimeErrorSafe('initialization requires a genuinely empty installation')
+            self.backend.require_empty_primary()
             self.backend.start_contacts(initialize=True)
             self.reset_day(initial=True);return self.status()
     def reset_day(self,initial=False):
@@ -287,7 +378,7 @@ class Runtime:
         self.ready=False;self.phase='resetting';self.backend.gate(False);self.backend.stop_app()
         day=self.clock();atomic(self.control/'reset-pending.json',{'deployment':'vaultcontext-demo','generation':day,'phase':'pending'})
         try:
-            self.backend.purge_ephemeral()
+            if not initial:self.backend.purge_ephemeral()
             shutil.rmtree(self.root/'runtime');(self.root/'runtime/pb_data').mkdir(mode=0o700,parents=True)
             self.generation=day
             if not initial:
@@ -400,6 +491,8 @@ def serve_control(runtime):
     methods={'status':lambda value:runtime.status(),'configure':runtime.configure,'initialize':lambda value:runtime.initialize(),
              'prepare-release':runtime.prepare_release,'validate-release':runtime.validate_release,'commit-release':runtime.commit_release,'abort-release':runtime.abort_release,
              'adopt-begin':runtime.adopt_begin,'adopt-finish':lambda value:runtime.adopt_finish()}
+    if runtime.compatibility:
+        for name in ('prepare-release','validate-release','commit-release','abort-release'):methods.pop(name)
     try:
         while not runtime.stop_event.is_set():
             try:connection,_=listener.accept()
@@ -449,7 +542,10 @@ def main():
     revision=Path('/usr/local/share/vaultcontext-revision').read_text().strip()
     origin=os.environ.get('BASE_URL','')
     if not re.fullmatch(r'https://(vault-demo|demo-vault|vaultcontext-demo)\.[a-z0-9.-]+',origin):raise RuntimeErrorSafe('exact HTTPS demo origin required')
-    runtime=Runtime(root,revision,Backend(root,origin))
+    compatibility=json.loads(Path('/usr/local/share/vaultcontext-compatibility.json').read_text())
+    if compatibility.get('format')!=1 or not re.fullmatch('[a-f0-9]{64}',compatibility.get('schema','')):
+        raise RuntimeErrorSafe('invalid compatibility policy')
+    runtime=Runtime(root,revision,Backend(root,origin),compatibility=compatibility)
     for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,lambda _s,_f:runtime.stop_event.set())
     try:
         runtime.on_locked=lambda:threading.Thread(target=serve_control,args=(runtime,),daemon=True).start()

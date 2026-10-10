@@ -47,4 +47,4 @@ class OnceEntrypointTests(unittest.TestCase):
     def test_once_bootstrap_does_not_require_private_bindings(self):
         with patch.dict(os.environ,{'VAULTCONTEXT_DEMO_ONCE':'true'},clear=True),patch.object(runtime,'ONCE_CHILD',False),patch.object(runtime.os,'execv',side_effect=SystemExit) as execute:
             with self.assertRaises(SystemExit):runtime.main([])
-            self.assertEqual(execute.call_args.args[1][-2:],['/usr/local/bin/vaultcontext-demo-once.py','run'])
+            self.assertEqual(execute.call_args.args,('/usr/local/bin/demo-supervisor',['/usr/local/bin/demo-supervisor']))

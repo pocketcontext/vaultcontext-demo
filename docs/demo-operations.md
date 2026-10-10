@@ -1,5 +1,11 @@
 # Demo reset and durable contact operations
 
+The application-owned [standard supervisor](standard-supervisor.md) is the new
+ONCE delivery path. The standalone systemd/Docker adapters below retain their
+isolated lifecycle and migration contracts; they must not run alongside the
+ONCE volume owner. Existing deployments require explicit PocketDeploy adoption
+and retirement of the dedicated release dispatcher before enabling standard CD.
+
 This is an executable implementation with synthetic local tests, not evidence of a deployed or provider-verified service. No resources, timers, accounts or mail subscriptions are created by committing these files. The existing VaultContext production deployment must not use these reset scripts.
 
 ## Storage boundaries

@@ -3,7 +3,7 @@
 This repository owns the disposable public demo at `vault-demo.pocketcontext.com`.
 Use [demo operations](demo-operations.md) for reset, contact retention and recovery
 boundaries, and the [CI and deployment contract](ci-and-deployment.md) for the
-ONCE supervisor and exact-digest release protocol. The core container behavior
+ONCE supervisor and standard PocketDeploy release protocol. The core container behavior
 below remains useful for isolated tests; it is not a standalone demo launch
 recipe. [Inherited release evidence](../DEPLOYMENT.md) describes historical core
 VaultContext releases, not the dedicated demo.
@@ -69,31 +69,33 @@ A writable recovery can recreate auxiliary state, not its prior history.
 
 ## Single-writer updates and rollback
 
-Use the dedicated demo dispatcher in `once-pocketcontext-v2`. Preserve the volume,
-OAuth identity, exact storage configuration and contact database. The ONCE
-supervisor holds the writer lock and fences public traffic while validating a
-candidate release; keep ONCE automatic updates and whole-volume backups disabled.
+Use standard PocketDeploy stop-first delivery after explicit application adoption
+in the `pocketdeploy-v1` deployment. Preserve the volume, OAuth identity, exact
+storage configuration and contact database. The application-owned supervisor
+holds the writer lock and fences public traffic while validating a compatible
+candidate; keep ONCE automatic updates and whole-volume backups disabled.
 Never run a recovery copy against the active replica.
 
 The main-only image workflow publishes `ghcr.io/pocketcontext/vaultcontext-demo`
 after all native validation gates. `VAULTCONTEXT_DEMO_PUBLISH=true` enables
 publication. `VAULTCONTEXT_DEMO_DEPLOY_ENABLED=true` enables deployment through
-the fixed `vaultcontext-demo` GitHub environment, restricted to `main`.
+the deployment-profile `pocketdeploy-v1` GitHub environment, restricted to `main`.
 `VAULTCONTEXT_DEMO_DEPLOY_PAUSED=true` pauses newly evaluated deployment jobs
 without pausing validation or publication. Let an active deployment finish before
 treating the host as fenced.
 
-The environment holds the dedicated `SSH_PRIVATE_KEY` and `SERVER_IP`,
-`SERVER_USER=deploy`, `SSH_KNOWN_HOSTS`. The job checks the current main revision,
-sends an exact image digest/revision request through the restricted SSH key and
-validates the receipt plus public assets and installation contract. See the
+The environment holds the restricted `SSH_PRIVATE_KEY`, `SERVER_IP`, configured
+operator `SERVER_USER` and verified `SSH_KNOWN_HOSTS`. The job checks the current
+main revision, opens a trigger-only SSH connection and verifies the running
+revision's public assets and installation contract. The host resolves configured
+`latest` to a digest at pull time. See the
 [complete protocol](ci-and-deployment.md); `/up` alone is not a release attestation.
 
 The app-local `deploy/install.py` and `deploy/deploy-vaultcontext.py` remain retired
 fail-closed stubs. Manage host helpers through the private deployment scaffold.
 There is no automatic rollback. Before any manual rollback, verify the previous
 image's schema, supervisor and image-namespace compatibility and the pending
-release state. Preserve current data; restoring an older database is a separate
+upgrade state. Preserve current data; restoring an older database is a separate
 recovery operation. Historical core VaultContext images and pre-S3 archives are
 not demo rollback targets.
 

@@ -68,6 +68,7 @@ jobs:
           VAULTCONTEXT_DEMO_TEST_LITESTREAM="$RUNNER_TEMP/vaultcontext-litestream" uv run --locked python -m unittest discover -s tests -p test_demo_contact_replica.py
           VAULTCONTEXT_TEST_BINARY="$RUNNER_TEMP/pocketcontext-maintenance" VAULTCONTEXT_TEST_LITESTREAM="$RUNNER_TEMP/vaultcontext-litestream" uv run --locked python -m unittest discover -s tests -p test_demo_auxiliary_replication.py
           VAULTCONTEXT_TEST_BINARY="$RUNNER_TEMP/pocketcontext-maintenance" VAULTCONTEXT_TEST_LITESTREAM="$RUNNER_TEMP/vaultcontext-litestream" uv run --locked python -m unittest discover -s tests -p test_demo_once_runtime.py
+          VAULTCONTEXT_TEST_BINARY="$RUNNER_TEMP/pocketcontext-maintenance" VAULTCONTEXT_TEST_LITESTREAM="$RUNNER_TEMP/vaultcontext-litestream" uv run --locked python -m unittest discover -s tests -p test_demo_standard_runtime.py
       - name: Native ONCE bootstrap and exclusive volume
         run: python3 docker/once_smoke.py --image vaultcontext:ci
       - name: Startup errors for missing configuration
@@ -76,6 +77,9 @@ jobs:
         run: uv run --locked python docker/smoke.py smoke --image vaultcontext:ci
       - name: Restore drill
         run: uv run --locked python docker/smoke.py restore --image vaultcontext:ci
+
+      - name: Populated standard demo stop-first replacement
+        run: uv run --locked python docker/standard_demo_smoke.py --image vaultcontext:ci
 
       - name: Migration database equality gate
         run: python3 tests/test_object_storage_equivalence.py
@@ -220,16 +224,15 @@ jobs:
     needs:
       - demo_manifest
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # Stop and readiness may each consume 15 minutes, plus pull and verification.
+    timeout-minutes: 60
     permissions:
       contents: read
     environment:
-      name: vaultcontext-demo
+      name: pocketdeploy-v1
     concurrency:
       group: deploy-vaultcontext-demo
       cancel-in-progress: false
-    env:
-      DEMO_DIGEST: ${{ needs.demo_manifest.outputs.digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -244,7 +247,7 @@ jobs:
             echo 'Refusing stale demo deployment.' >&2
             exit 1
           fi
-      - name: Deploy exact demo digest over restricted SSH
+      - name: Reconcile configured demo over restricted SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SERVER_IP: ${{ vars.SERVER_IP }}
@@ -252,17 +255,13 @@ jobs:
           SSH_KNOWN_HOSTS: ${{ vars.SSH_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          test "$SERVER_USER" = deploy
           test -n "$SSH_KNOWN_HOSTS"
-          test -n "$SERVER_IP"
           python3 - <<'PY'
-          import json, os, re
-          from pathlib import Path
-          digest, revision = os.environ['DEMO_DIGEST'], os.environ['GITHUB_SHA']
-          if not re.fullmatch(r'sha256:[0-9a-f]{64}', digest) or not re.fullmatch(r'[0-9a-f]{40}', revision):
-              raise SystemExit('Invalid demo release identity')
-          Path(os.environ['RUNNER_TEMP'], 'demo-request.json').write_text(json.dumps({
-              'image': 'ghcr.io/pocketcontext/vaultcontext-demo@' + digest, 'revision': revision}) + '\n')
+          import os, re
+          if not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', os.environ['SERVER_USER']):
+              raise SystemExit('Invalid configured SSH operator account')
+          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.:-]*', os.environ['SERVER_IP']):
+              raise SystemExit('Invalid configured SSH host')
           PY
           umask 077
           mkdir -p ~/.ssh
@@ -270,10 +269,10 @@ jobs:
           eval "$(ssh-agent -s)" >/dev/null
           trap 'ssh-agent -k >/dev/null 2>&1 || true' EXIT
           printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add - >/dev/null 2>&1
-          # The dedicated forced-command key reads a bounded release JSON request.
+          # The per-key forced command reconciles the host-configured latest image.
           # No remote command, registry credential, shell script or archive is sent.
           ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
-            "$SERVER_USER@$SERVER_IP" < "$RUNNER_TEMP/demo-request.json" > "$RUNNER_TEMP/demo-receipt.json"
+            "$SERVER_USER@$SERVER_IP" < /dev/null > "$RUNNER_TEMP/demo-receipt.json"
           python3 - <<'PY'
           import json, os
           from pathlib import Path
@@ -281,35 +280,37 @@ jobs:
           if len(raw) > 4096:
               raise SystemExit('Invalid demo release receipt')
           receipt = json.loads(raw)
-          expected = {'ready': True, 'revision': os.environ['GITHUB_SHA'],
-                      'image': 'ghcr.io/pocketcontext/vaultcontext-demo@' + os.environ['DEMO_DIGEST']}
-          if receipt != expected or receipt.get('ready') is not True:
-              raise SystemExit('Demo release receipt differs from requested revision and digest')
+          if receipt != {'ok': True} or receipt.get('ok') is not True:
+              raise SystemExit('Invalid PocketDeploy reconciliation receipt')
           PY
-      - name: Attest root demo assets and installation
+      - name: Verify running demo revision, assets and installation
         run: |
           python3 - <<'PY'
           import hashlib, json, re, time
           from datetime import datetime, timezone
-          from pathlib import Path
           from urllib.request import Request, urlopen
           from urllib.error import HTTPError
           origin = 'https://vault-demo.pocketcontext.com'
-          def fetch(path, limit=4194304):
-              request = Request(origin + path, headers={'User-Agent': 'VaultContext-Demo-Release-Check/1.0'})
+          def fetch(path, limit=4194304, base=origin):
+              request = Request(base + path, headers={'User-Agent': 'VaultContext-Demo-Release-Check/1.0'})
               with urlopen(request, timeout=20) as response:
-                  if response.status != 200 or response.geturl() != origin + path:
+                  if response.status != 200 or response.geturl() != base + path:
                       raise ValueError('Unexpected public demo response')
                   body = response.read(limit + 1)
                   if len(body) > limit:
                       raise ValueError('Public artifact exceeds limit')
                   return body
           def verify():
+              runtime = json.loads(fetch('/up', 4096))
+              revision = runtime.get('revision', '')
+              if runtime.get('ready') is not True or not re.fullmatch(r'[0-9a-f]{40}', revision):
+                  raise ValueError('Public demo runtime is not ready')
+              source = 'https://raw.githubusercontent.com/pocketcontext/vaultcontext-demo/' + revision
               status = json.loads(fetch('/api/demo/status', 32768))
               day = datetime.now(timezone.utc).date().isoformat()
               if status.get('enabled') is not True or status.get('clientReady') is not True or status.get('generation') != day:
                   raise ValueError('Public demo is not ready for the current UTC generation')
-              launcher = Path('skills/vaultcontext/vaultcontext').read_text()
+              launcher = fetch('/skills/vaultcontext/vaultcontext', 65536, base=source).decode()
               pin = re.search(r'vaultcontext-demo\.git@([0-9a-f]{40})', launcher).group(1)
               expected_installation = {'method': 'skills', 'skill': 'vaultcontext',
                   'source': 'https://github.com/pocketcontext/vaultcontext-demo/tree/main/skills/vaultcontext',
@@ -319,24 +320,28 @@ jobs:
               for path, name in (('/', 'index.html'), ('/app.js', 'app.js'), ('/styles.css', 'styles.css'),
                                  ('/terms/', 'terms/index.html'), ('/privacy/', 'privacy/index.html'),
                                  ('/vendor/pocketbase.es.mjs', 'vendor/pocketbase.es.mjs')):
-                  expected = Path('pb_public', name).read_bytes()
+                  expected = fetch('/pb_public/' + name, base=source)
                   if hashlib.sha256(fetch(path)).digest() != hashlib.sha256(expected).digest():
-                      raise ValueError('Public assets differ from the workflow revision')
+                      raise ValueError('Public assets differ from the running revision')
               for path in ('/demo', '/demo/', '/demo/app.js', '/demo/downloads/manifest.json', '/downloads/'):
                   try:
                       fetch(path)
                   except HTTPError as error:
+                      error.close()
                       if error.code != 404:
                           raise ValueError('Retired path did not return 404') from None
                   else:
                       raise ValueError('Retired path remains available')
+              if json.loads(fetch('/up', 4096)) != runtime:
+                  raise ValueError('Demo runtime changed during verification')
+              return revision
           for attempt in range(6):
               try:
-                  verify()
+                  revision = verify()
                   break
               except Exception:
                   if attempt == 5:
                       raise SystemExit('Public demo release attestation failed') from None
                   time.sleep(5)
-          print('Root demo generation, revision assets, installation and retired paths verified')
+          print('Verified running demo revision ' + revision + ', UTC generation, assets, installation and retired paths')
           PY

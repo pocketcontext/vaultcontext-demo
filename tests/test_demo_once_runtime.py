@@ -96,6 +96,9 @@ class LocalBackend:
     def healthy(self):
         return self.app and self.contacts
 
+    def require_empty_primary(self):
+        self.events.append(('check-empty-primary',))
+
     def purge_ephemeral(self):
         self.events.append(('purge',))
         if self.app or self.opened:
@@ -389,7 +392,7 @@ class OnceRuntimeStateTests(unittest.TestCase):
         self.assertEqual(after['contacts'], before['contacts'])
         self.assertEqual(value.status()['generation'], self.day[0])
         self.assertTrue(value.status()['ready'])
-        self.assertEqual(sum(event == ('purge',) for event in backend.events), 2)
+        self.assertEqual(sum(event == ('purge',) for event in backend.events), 1)
 
     def test_release_requires_candidate_validation_before_public_commit(self):
         old, backend = self.populated()

@@ -53,23 +53,30 @@ RUN go build -trimpath -tags sqlite_math_functions,sqlite_percentile,sqlite_fts5
     && /out/pocketcontext --version
 
 
+WORKDIR /supervisor
+COPY supervisor/ ./
+RUN go test ./... && go build -trimpath -ldflags '-s -w' -o /out/demo-supervisor ./cmd/demo-supervisor
+
 FROM ghcr.io/pocketcontext/vaultcontext-demo:base-debian-trixie-20260918-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates tini python3 python3-boto3 nginx \
     && rm -rf /var/lib/apt/lists/* \
     && test -x /usr/bin/tini
 
-COPY --from=build /out/pocketcontext /out/litestream /usr/local/bin/
+COPY --from=build /out/pocketcontext /out/litestream /out/demo-supervisor /usr/local/bin/
 COPY docker/litestream.yml /etc/litestream.yml
 COPY --chmod=0755 docker/entrypoint.py /usr/local/bin/vaultcontext-entrypoint.py
 COPY --chmod=0755 deploy/demo/retention.py /usr/local/bin/vaultcontext-demo-retention.py
 COPY --chmod=0755 deploy/demo/contact_replica.py /usr/local/bin/vaultcontext-demo-contact-replica.py
 COPY --chmod=0755 deploy/demo/once_runtime.py /usr/local/bin/vaultcontext-demo-once.py
+COPY deploy/demo/verify_compatibility.py /usr/local/lib/vaultcontext-demo/verify_compatibility.py
+COPY deploy/demo/compatibility.json /usr/local/share/vaultcontext-compatibility.json
 COPY deploy/demo/reset.py /usr/local/lib/vaultcontext-demo/reset.py
 COPY deploy/demo/contact-litestream.yml /etc/vaultcontext-demo-contacts-litestream.yml
 WORKDIR /app
 COPY POCKETCONTEXT_VERSION pocketcontext.json ./
 COPY pb_migrations/ ./pb_migrations/
+RUN python3 /usr/local/lib/vaultcontext-demo/verify_compatibility.py /usr/local/share/vaultcontext-compatibility.json
 COPY pb_hooks/ ./pb_hooks/
 COPY pb_public/ ./pb_public/
 COPY skills/vaultcontext/vaultcontext ./skills/vaultcontext/vaultcontext

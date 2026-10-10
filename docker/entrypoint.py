@@ -628,7 +628,7 @@ def serve():
 
 def main(argv=None):
     if os.environ.get('VAULTCONTEXT_DEMO_ONCE') == 'true' and not ONCE_CHILD:
-        os.execv(sys.executable, [sys.executable, '/usr/local/bin/vaultcontext-demo-once.py', 'run'])
+        os.execv('/usr/local/bin/demo-supervisor', ['/usr/local/bin/demo-supervisor'])
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=('start', 'init', 'serve', 'verify', 'handoff', 'adopt-handoff'), nargs='?', default='start')

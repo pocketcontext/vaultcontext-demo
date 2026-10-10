@@ -47,10 +47,12 @@ def main():
         if not address.startswith('127.0.0.1:') or not address.rsplit(':', 1)[1].isdigit():
             raise Failure('unexpected isolated test listener')
         base = 'http://' + address
+        prefix = ['exec', '--interactive', name, 'python3', '/usr/local/bin/vaultcontext-demo-once.py', 'control']
         deadline = time.monotonic() + 30
         while True:
             try:
-                if http(base, '/up') == 200:
+                control = command(*prefix, 'status', required=False)
+                if http(base, '/up') == 503 and control.returncode == 0:
                     break
             except (OSError, URLError):
                 pass
@@ -60,7 +62,6 @@ def main():
         for path in ('/', '/demo/', '/api/demo/status'):
             if http(base, path) != 503:
                 raise Failure('unconfigured bootstrap exposed public application')
-        prefix = ['exec', '--interactive', name, 'python3', '/usr/local/bin/vaultcontext-demo-once.py', 'control']
         status = json.loads(command(*prefix, 'status').stdout)
         if status['ready'] is not False or status['configured'] is not False or status['databases'] != 0:
             raise Failure('bootstrap status differs')
@@ -75,7 +76,7 @@ def main():
         result = command('wait', other)
         if result.stdout.strip() == b'0':
             raise Failure('overlapping supervisor acquired the active volume')
-        if http(base, '/up') != 200 or json.loads(command(*prefix, 'status').stdout)['configured'] is not False:
+        if http(base, '/up') != 503 or json.loads(command(*prefix, 'status').stdout)['configured'] is not False:
             raise Failure('overlapping candidate disturbed the active controller')
         command('stop', '--time', '30', name)
         code = command('inspect', '--format', '{{.State.ExitCode}}', name).stdout.strip()

@@ -29,3 +29,8 @@ pb_public/downloads/
 
 !deploy/demo/once_runtime.py
 !deploy/demo/reset.py
+
+!supervisor/go.mod
+!supervisor/cmd/demo-supervisor/*.go
+!deploy/demo/compatibility.json
+!deploy/demo/verify_compatibility.py

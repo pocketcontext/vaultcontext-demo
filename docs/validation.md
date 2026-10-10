@@ -438,3 +438,34 @@ and passed on retry. Existing historical archive tests remain for compatibility;
 they do not establish archive support in the new image. Native AMD64 execution,
 macOS-only checks, real R2 behavior and production deployment were not performed.
 No publication, deployment, cloud configuration or real application data changed.
+## Standard supervisor local validation — 2026-10-10
+
+The application-owned Go process/readiness supervisor and Python storage worker
+were validated locally with the unchanged pinned PocketContext server and
+Litestream, synthetic records and isolated containers. No public deployment,
+Google sign-in, cloud storage or live ONCE adoption was exercised.
+
+- Full Python unit discovery: 228 tests, 13 platform/optional-fixture skips.
+- Runtime suites with the pinned server and Litestream: 35 tests passed, including
+  a populated legacy-state transition and same-revision restart.
+- Go race tests and compatibility fingerprint checks passed.
+- README integration, archive migration, realtime, maximum-file, complete backup,
+  auth, OAuth integration, portable skill, CLI forwarding and deployment checks
+  passed. Demo backend, identity rewrap and maintenance checks also passed.
+- Real local replication, contact replication, auxiliary replication and reset
+  checks passed with their optional binary fixtures enabled.
+- Workflow tests (8), actionlint, entrypoint checks and object-storage settings
+  checks passed.
+- Image build, missing-configuration checks, smoke, populated primary-storage
+  restore and native bootstrap/exclusive-volume checks passed.
+- The new populated standard-container gate passed against TLS MinIO: nonempty
+  primary storage rejects initialization before database creation; three scoped
+  storage identities initialize; ordinary enrollment and encrypted uploads work;
+  overlapping writers fail; clean stopped-container replacement and restart
+  preserve decryptable ciphertext, all three databases and withdrawn contacts.
+
+The container gate tests Docker replacement, not the ONCE control plane. Native
+AMD64/ARM64 CI, publication, the actual running predecessor revision, verified
+ownership transfer, real Google sign-in and live provider recovery remain release
+and cutover checks. The deployment repository stages its new configuration until
+PocketDeploy's adoption/readiness changes are published and its launcher repinned.
