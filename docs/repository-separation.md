@@ -13,13 +13,21 @@ Core VaultContext remains independently owned by `pocketcontext/vaultcontext`.
 
 ## Cutover status and boundaries
 
-The repository cutover is in progress. This document records intended ownership
-and release requirements, not successful deployment evidence. The existing demo
-hostname, Google OAuth client, ONCE volume, private object stores and three
-databases must be preserved. Separation requires no new cloud resources or data
-initialization.
+The repository cutover completed on 10 October 2026. The existing demo hostname,
+Google OAuth client, ONCE volume, private object stores and three databases were
+preserved. No cloud resources were created and no data was initialized.
 
-Pause old-repository demo CD before enabling the new release path. Mirror the
+The old repository deployed compatibility bridge `f7dcb00` through
+[its validated release](https://github.com/pocketcontext/vaultcontext/actions/runs/38029197994).
+The dedicated repository then deployed revision `9d45c1c`, image
+`ghcr.io/pocketcontext/vaultcontext-demo@sha256:9096267f7855a4750fe9aa22999786fd16f1eb92c754cebec6382597f567e834`,
+through [its native validation and CD run](https://github.com/pocketcontext/vaultcontext-demo/actions/runs/38029377538).
+The release receipt and public asset/installation checks passed. The old demo
+publishing/CD flags are disabled, its environment deployment secret was removed,
+and the dedicated environment is restricted to `main`. Later normal releases
+may supersede this initial cutover image.
+
+For any future repository migration, pause the old release path before enabling the new one. Mirror the
 pinned base images into the new namespace and verify anonymous access. Configure
 the dedicated GitHub environment for `main`, and pass native application,
 container recovery and copied-launcher checks before deployment. The old running
