@@ -395,8 +395,15 @@ class OnceRuntimeStateTests(unittest.TestCase):
         try:
             deadline = time.monotonic()+3
             path = value.control/'control.sock'
-            while not path.exists() and time.monotonic()<deadline:
-                time.sleep(.01)
+            # bind creates the inode before chmod/listen; existence alone races
+            # socket initialization, particularly on the macOS runner.
+            while True:
+                try:
+                    self.module.request(self.root, 'status')
+                    break
+                except (FileNotFoundError, ConnectionRefusedError):
+                    if time.monotonic()>=deadline:raise
+                    time.sleep(.01)
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             result = self.module.request(self.root, 'reset', self.reset_confirmation(value))
             self.assertTrue(result['ready'])
