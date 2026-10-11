@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import secrets
 import shutil
+import sqlite3
 import integration
 import tempfile
 import threading
@@ -28,6 +29,11 @@ def server(binary,**options):
         for folder in ('pb_hooks','pb_migrations'):
             shutil.copytree(ROOT/folder,root/folder)
         (root/'pb_hooks/demo_tokens.pb.js').write_text("""
+routerUse(new Middleware((e)=>{
+ if(e.request.url.path==='/api/demo/status' && e.request.url.query().get('syntheticFailure')==='1')
+  throw new ApiError(503,'Synthetic health failure',{});
+ return e.next();
+},1));
 onRecordCreate((e)=>{
  if(e.record.getInt('contact_revision')===1)throw new BadRequestError('Synthetic admission failure');
  e.next();
@@ -86,8 +92,41 @@ def check_installation_metadata(binary):
             assert result['clientReady'] is False and result['installation'] is None,result
 
 
+def check_health_probe_logs(binary):
+    today=datetime.now(timezone.utc).date().isoformat()
+    probe_token=secrets.token_urlsafe(32)
+    with tempfile.TemporaryDirectory(prefix='demo-probe-logs-') as temporary, contacts() as (contact_url,contact_token,_):
+        data_dir=Path(temporary)/'pb_data'
+        env={'VAULTCONTEXT_DEMO_MODE':'true','VAULTCONTEXT_DEMO_GENERATION':today,
+             'VAULTCONTEXT_DEMO_CONTACT_URL':contact_url,'VAULTCONTEXT_DEMO_CONTACT_TOKEN':contact_token,
+             'VAULTCONTEXT_DEMO_HEALTH_TOKEN':probe_token}
+        with patch.dict(os.environ,env),server(binary,data_dir=data_dir) as request:
+            cases=[('internal',{'X-VaultContext-Health-Token':probe_token},200),
+                   ('external',{},200),
+                   ('forwarded',{'X-Forwarded-For':'127.0.0.1'},200),
+                   ('wrong-token',{'X-VaultContext-Health-Token':'synthetic-wrong-token'},200),
+                   ('failure',{'X-VaultContext-Health-Token':probe_token},503)]
+            for name,headers,expected in cases:
+                path='/api/demo/status?probeCase='+name
+                if name=='failure':path+='&syntheticFailure=1'
+                req=urllib.request.Request(request.base_url+path,headers=headers)
+                try:
+                    with urllib.request.urlopen(req) as response:status=response.status
+                except urllib.error.HTTPError as error:status=error.code
+                assert status==expected,(name,status)
+        # Graceful termination flushes the request logger; inspect only synthetic data.
+        with contextlib.closing(sqlite3.connect('file:'+str(data_dir/'auxiliary.db')+'?mode=ro',uri=True)) as database:
+            logs=[json.loads(row[0]) for row in database.execute('SELECT data FROM _logs')]
+        urls=[entry.get('url','') for entry in logs]
+        for name,_,_ in cases:
+            matching=[url for url in urls if 'probeCase='+name in url]
+            assert len(matching)==(0 if name=='internal' else 1),(name,matching,urls)
+        assert probe_token not in json.dumps(logs),'Probe token leaked into logs'
+
+
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--binary',required=True);args=parser.parse_args()
+    check_health_probe_logs(args.binary)
     check_installation_metadata(args.binary)
     today=datetime.now(timezone.utc).date().isoformat()
     with contacts() as (contact_url,contact_token,store), google_fixture() as (url,codes), patch.dict(os.environ,{

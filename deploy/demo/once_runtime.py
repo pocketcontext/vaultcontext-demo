@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import signal
 import socket
@@ -151,6 +152,7 @@ class Backend:
     """Local child processes only. No container API, Docker CLI, or ONCE recursion."""
     def __init__(self,root,origin):
         self.root=Path(root);self.origin=origin;self.bindings={};self.processes={};self.lease=None
+        self.health_token=secrets.token_urlsafe(32)
         self.entrypoint='/usr/local/bin/vaultcontext-entrypoint.py'
         self.contacts='/usr/local/bin/vaultcontext-demo-contact-replica.py'
         self.nginx='/usr/sbin/nginx'
@@ -173,6 +175,7 @@ class Backend:
         env={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'HOME':'/root',**{k:v for k,v in self.bindings.items() if not k.startswith('CONTACTS_LITESTREAM_')}}
         env.update(VAULTCONTEXT_DEMO_MODE='true',VAULTCONTEXT_DEMO_ONCE='true',VAULTCONTEXT_DEMO_ONCE_CHILD='app',
                    VAULTCONTEXT_DEMO_ONCE_ROOT=str(self.root),VAULTCONTEXT_DEMO_GENERATION=day,
+                   VAULTCONTEXT_DEMO_HEALTH_TOKEN=self.health_token,
                    VAULTCONTEXT_DEMO_RESET_FENCE=str(self.root/'control/reset-pending.json'),BASE_URL=self.origin,
                    VAULTCONTEXT_DEMO_CONTACT_URL='http://127.0.0.1:8781',VAULTCONTEXT_TRUSTED_PROXY_HEADER='X-Forwarded-For')
         return env
@@ -193,11 +196,15 @@ class Backend:
         if initialize:self.execute(args+['init'],env)
         self.launch('contacts',args+['start'],env)
     def stop_contacts(self):self.stop('contacts')
-    def healthy(self):
+    def children_alive(self):
         for name in ('app','contacts'):
             if name not in self.processes or self.processes[name].poll() is not None:return False
+        return True
+    def healthy(self):
+        if not self.children_alive():return False
         try:
-            with urlopen('http://127.0.0.1:8081/api/demo/status',timeout=2) as response:value=json.load(response)
+            probe=Request('http://127.0.0.1:8081/api/demo/status',headers={'X-VaultContext-Health-Token':self.health_token})
+            with urlopen(probe,timeout=2) as response:value=json.load(response)
             request=Request('http://127.0.0.1:8781/health',headers={'Authorization':'Bearer '+self.bindings['VAULTCONTEXT_DEMO_CONTACT_TOKEN']})
             with urlopen(request,timeout=2) as response:contact=json.load(response)
             return value.get('enabled') is True and value.get('generation')==utc_day() and contact.get('ready') is True
@@ -258,10 +265,12 @@ location = /up { add_header Cache-Control "no-store" always; proxy_pass http://1
         if errors:raise RuntimeErrorSafe('children failed to drain')
 
 class Runtime:
+    HEALTH_INTERVAL_SECONDS=10
     def __init__(self,root,revision,backend,clock=utc_day,compatibility=None):
         if not REVISION.fullmatch(revision):raise RuntimeErrorSafe('immutable build revision required')
         self.root=Path(root).absolute();self.revision=revision;self.backend=backend;self.clock=clock
         self.compatibility=compatibility
+        self.next_health_check=0.0
         self.control=self.root/'control';self.pending=self.control/'release-pending.json';self.state_file=self.control/'state.json'
         self.ready=False;self.phase='unconfigured';self.generation=None;self.image=None;self.bindings=None;self.lock=None
         self.mutex=threading.RLock();self.stop_event=threading.Event();self.on_locked=None;self.minute=lambda:datetime.now(timezone.utc).hour*60+datetime.now(timezone.utc).minute
@@ -396,6 +405,7 @@ class Runtime:
             if time.monotonic()>deadline:raise RuntimeErrorSafe('replicated application readiness failed')
             time.sleep(.2)
         self.policy_valid()
+        self.next_health_check=time.monotonic()+self.HEALTH_INTERVAL_SECONDS
     def start_writers(self):
         self.configured();self.policy_valid();self.backend.start_contacts();self.backend.start_app(self.generation);self.wait_health()
     def drain(self):
@@ -505,7 +515,14 @@ class Runtime:
     def tick(self):
         with self.mutex:
             if self.ready and self.generation!=self.clock():self.reset_day()
-            elif self.ready and not self.backend.healthy():self.drain();self.phase='blocked'
+            elif self.ready:
+                # Expiry and child exits remain checked on every 200 ms tick.
+                # HTTP readiness is independent of that safety cadence.
+                if not self.backend.children_alive():self.drain();self.phase='blocked'
+                elif time.monotonic()>=self.next_health_check:
+                    healthy=self.backend.healthy()
+                    self.next_health_check=time.monotonic()+self.HEALTH_INTERVAL_SECONDS
+                    if not healthy:self.drain();self.phase='blocked'
             if self.ready and self.minute()>=5 and not self.pending.exists():
                 marker=self.control/'maintenance.json'
                 if not marker.exists() or private_json(marker).get('generation')!=self.generation:

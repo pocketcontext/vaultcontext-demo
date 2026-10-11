@@ -104,3 +104,23 @@ VAULTCONTEXT_TEST_LITESTREAM=/path/to/pinned/litestream \
 Container config, smoke, exclusive-volume startup, standard replacement and
 populated recovery remain release gates. Mocked state tests alone do not establish
 real storage or provider recovery.
+
+## Health polling and request logs
+
+The worker checks UTC expiry and child-process exits on its 200 ms loop. Once
+startup readiness succeeds, HTTP probes of the application and contact service
+run every 10 seconds using a monotonic clock. An unresponsive service whose
+process remains alive can therefore take up to that interval plus request
+timeouts to fence; startup still probes immediately.
+
+Each worker generates a private, memory-only health token and passes it to its
+application child and loopback status probe. The exact demo status route omits
+successful request logs only for a matching token from a loopback transport peer.
+Failed probes, public requests and invalid tokens retain normal logging. The
+token is not an application credential and grants no record access.
+
+This avoids filling `auxiliary.db` and its Litestream history with the worker's
+own successful probes. Main and auxiliary replication remain at their configured
+intervals; daily UTC reset remains responsible for deleting existing disposable
+replica history. A routine release preserves today's sessions and does not
+purge existing history.

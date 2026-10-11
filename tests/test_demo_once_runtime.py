@@ -93,8 +93,11 @@ class LocalBackend:
         self.events.append(('gate', opened))
         self.opened = opened
 
-    def healthy(self):
+    def children_alive(self):
         return self.app and self.contacts
+
+    def healthy(self):
+        return self.children_alive()
 
     def require_empty_primary(self):
         self.events.append(('check-empty-primary',))
@@ -311,6 +314,72 @@ class OnceRuntimeStateTests(unittest.TestCase):
         self.day = ['2026-10-09']
         self.instances = []
         self.addCleanup(self.close_all)
+
+    def test_internal_probe_uses_same_private_token_as_child_environment(self):
+        import io
+        from unittest.mock import Mock, patch
+        backend = self.module.Backend(self.root, 'https://synthetic.invalid')
+        backend.configure(fixture_bindings())
+        backend.processes = {name: Mock(poll=Mock(return_value=None)) for name in ('app', 'contacts')}
+        responses = [io.BytesIO(json.dumps({'enabled': True, 'generation': self.module.utc_day()}).encode()),
+                     io.BytesIO(b'{"ready":true}')]
+        with patch.object(self.module, 'urlopen', side_effect=responses) as opener:
+            self.assertTrue(backend.healthy())
+        request = opener.call_args_list[0].args[0]
+        self.assertEqual(request.get_header('X-vaultcontext-health-token'),
+                         backend.app_env(self.day[0])['VAULTCONTEXT_DEMO_HEALTH_TOKEN'])
+        self.assertEqual(request.full_url, 'http://127.0.0.1:8081/api/demo/status')
+        self.assertNotIn('VAULTCONTEXT_DEMO_HEALTH_TOKEN', backend.bindings)
+        self.assertNotEqual(backend.health_token,
+                            self.module.Backend(self.root, 'https://synthetic.invalid').health_token)
+
+    def test_health_checks_are_throttled_but_fail_closed_when_due(self):
+        from unittest.mock import patch
+        with patch.object(self.module.time, 'monotonic', return_value=100) as monotonic:
+            value, backend = self.populated()
+            value.minute = lambda: 0
+            with patch.object(backend, 'healthy', return_value=True) as health:
+                for tick in range(1, 50):
+                    monotonic.return_value = 100 + tick * .2
+                    value.tick()
+                health.assert_not_called()
+                monotonic.return_value = 110
+                value.tick()
+                health.assert_called_once()
+                monotonic.return_value = 119.8
+                value.tick()
+                health.assert_called_once()
+                health.return_value = False
+                monotonic.return_value = 120
+                value.tick()
+                self.assertEqual(health.call_count, 2)
+                self.assertFalse(value.ready or backend.opened or backend.app or backend.contacts)
+                self.assertEqual(value.phase, 'blocked')
+
+    def test_child_exit_fences_before_next_http_check(self):
+        from unittest.mock import patch
+        with patch.object(self.module.time, 'monotonic', return_value=100):
+            value, backend = self.populated()
+            backend.app = False
+            with patch.object(backend, 'healthy') as health:
+                value.tick()
+                health.assert_not_called()
+            self.assertFalse(value.ready or backend.opened or backend.contacts)
+            self.assertEqual(value.phase, 'blocked')
+
+    def test_midnight_reset_does_not_wait_for_next_health_check(self):
+        from unittest.mock import patch
+        with patch.object(self.module.time, 'monotonic', return_value=100):
+            value, backend = self.populated()
+            value.minute = lambda: 0
+            before = backend.contents()
+            self.day[0] = '2026-10-10'
+            value.tick()
+            self.assertEqual(backend.events.count(('purge',)), 1)
+            self.assertEqual(backend.contents()['contacts'], before['contacts'])
+            self.assertEqual(backend.contents()['main'], [])
+            self.assertTrue(value.ready)
+            self.assertEqual(value.generation, self.day[0])
 
     def test_reset_selects_version_aware_s3_except_exact_r2_endpoints(self):
         from unittest.mock import Mock, patch

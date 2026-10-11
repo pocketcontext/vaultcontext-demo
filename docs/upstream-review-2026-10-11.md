@@ -51,3 +51,12 @@ build can use this pin. It is published on `private-scoped-search`; this adoptio
 does not merge that branch into server `main`. Application release validation
 and deployment evidence are recorded in the [release receipt](release-2026-10-11.md),
 separately from the initial local review.
+
+## Demo health polling and log volume
+
+The follow-up health polling fix changes only the demo supervisor, demo status
+hook and synthetic regression checks. Core VaultContext has neither this public
+demo status route nor its 200 ms supervisor loop, so no core adoption is needed.
+The shared server, cryptography, client pin and storage recovery policy remain
+unchanged. The fix preserves failure/public request logging and daily replica
+purging; it does not remove auxiliary database replication.
