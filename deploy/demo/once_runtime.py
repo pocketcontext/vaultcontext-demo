@@ -427,6 +427,25 @@ class Runtime:
             self.backend.require_empty_primary()
             self.backend.start_contacts(initialize=True)
             self.reset_day(initial=True);return self.status()
+    def reset_now(self,value):
+        """Explicit operator destruction, available only over the private control socket."""
+        with self.mutex:
+            if (not isinstance(value,dict) or set(value)!={'expectedGeneration','expectedRevision','discardEphemeral'}
+                    or value.get('discardEphemeral') is not True
+                    or value.get('expectedGeneration')!=self.generation
+                    or value.get('expectedRevision')!=self.revision):
+                raise RuntimeErrorSafe('exact current reset confirmation required')
+            self.configured()
+            if self.stop_event.is_set() or not self.ready or self.phase!='active':
+                raise RuntimeErrorSafe('active unfenced generation required')
+            markers=[self.control/name for name in ('release-pending.json','upgrade-pending.json','reset-pending.json','adoption-pending.json')]
+            markers += [self.root/'runtime/pb_data'/name for name in ('initialization.pending','restoration.pending','maintenance.json')]
+            markers += [self.root/'persistent'/name for name in ('migration-fenced.json','recovery.pending')]
+            if any(path.exists() or path.is_symlink() for path in markers):
+                raise RuntimeErrorSafe('pending or maintenance state blocks manual reset')
+            self.policy_valid()
+            self.reset_day()
+            return self.status()
     def reset_day(self,initial=False):
         if self.pending.exists() or (self.control/'adoption-pending.json').exists():raise RuntimeErrorSafe('pending operation blocks reset')
         self.ready=False;self.phase='resetting';self.backend.gate(False);self.backend.stop_app()
@@ -549,7 +568,7 @@ def request(root,command,value=None):
 def serve_control(runtime):
     path=runtime.control/'control.sock';path.unlink(missing_ok=True)
     listener=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);listener.bind(str(path));path.chmod(0o600);listener.listen(8);listener.settimeout(.5)
-    methods={'status':lambda value:runtime.status(),'configure':runtime.configure,'initialize':lambda value:runtime.initialize(),
+    methods={'status':lambda value:runtime.status(),'configure':runtime.configure,'initialize':lambda value:runtime.initialize(),'reset':runtime.reset_now,
              'prepare-release':runtime.prepare_release,'validate-release':runtime.validate_release,'commit-release':runtime.commit_release,'abort-release':runtime.abort_release,
              'adopt-begin':runtime.adopt_begin,'adopt-finish':lambda value:runtime.adopt_finish()}
     if runtime.compatibility:
@@ -597,7 +616,7 @@ def control(root,command):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('mode',choices=('run','control'))
-    parser.add_argument('command',nargs='?',choices=('status','configure','initialize','adopt','prepare-release','validate-release','commit-release','abort-release'))
+    parser.add_argument('command',nargs='?',choices=('status','configure','initialize','reset','adopt','prepare-release','validate-release','commit-release','abort-release'))
     args=parser.parse_args();os.umask(0o077);root=Path('/storage')
     if args.mode=='control':print(json.dumps(control(root,args.command)));return
     revision=Path('/usr/local/share/vaultcontext-revision').read_text().strip()

@@ -60,6 +60,32 @@ contact initialization refuse populated replicas. Missing/corrupt state, partial
 databases, pending legacy releases or incomplete resets require recovery
 review. Do not initialize or restore over an existing deployment to bypass them.
 
+## Immediate operator reset
+
+The private volume control socket supports `reset` for an explicitly authorized
+same-day reset. This permanently deletes current demo accounts, vaults, uploaded
+ciphertext and both disposable database replicas. It retains contacts and their
+separate replica. The reset closes ingress and drains application replication
+before using the same verified purge and fresh initialization as the UTC reset.
+
+Read current `generation` and `revision` through private `control status`, then
+send exactly those values and the destruction acknowledgement on standard input:
+
+```sh
+python3 /usr/local/bin/vaultcontext-demo-once.py control status
+python3 /usr/local/bin/vaultcontext-demo-once.py control reset <<'JSON'
+{"expectedGeneration":"YYYY-MM-DD","expectedRevision":"CURRENT_40_CHARACTER_REVISION","discardEphemeral":true}
+JSON
+```
+
+Run these commands inside the existing application container with operator access.
+The command requires a ready, active, current generation, no pending operation or
+maintenance/recovery fence, and no shutdown request. It is unavailable through
+HTTP. Failed purge leaves the durable reset fence and public ingress closed.
+Inspect status and operation markers after an interrupted command; never retry
+automatically. The expected generation and revision detect stale observations,
+but do not deduplicate two requests within the same day and revision.
+
 ## Readiness and shutdown
 
 The public nginx gate proxies `/up` to Go's loopback readiness endpoint. Success

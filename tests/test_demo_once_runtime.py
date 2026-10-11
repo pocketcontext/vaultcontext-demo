@@ -381,6 +381,86 @@ class OnceRuntimeStateTests(unittest.TestCase):
             self.assertTrue(value.ready)
             self.assertEqual(value.generation, self.day[0])
 
+    def reset_confirmation(self, value):
+        return {'expectedGeneration': value.generation, 'expectedRevision': value.revision,
+                'discardEphemeral': True}
+
+    def test_manual_reset_is_available_on_private_control_socket(self):
+        import threading
+        import time
+        value, backend = self.populated()
+        value.compatibility = {'schema': 'a'*64}
+        worker = threading.Thread(target=self.module.serve_control, args=(value,))
+        worker.start()
+        try:
+            deadline = time.monotonic()+3
+            path = value.control/'control.sock'
+            while not path.exists() and time.monotonic()<deadline:
+                time.sleep(.01)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            result = self.module.request(self.root, 'reset', self.reset_confirmation(value))
+            self.assertTrue(result['ready'])
+            self.assertEqual(backend.events.count(('purge',)), 1)
+        finally:
+            value.stop_event.set()
+            worker.join(timeout=3)
+        self.assertFalse(worker.is_alive())
+
+    def test_manual_same_day_reset_preserves_contacts(self):
+        value, backend = self.populated()
+        before = backend.contents()
+        result = value.reset_now(self.reset_confirmation(value))
+        self.assertTrue(result['ready'])
+        self.assertEqual(result['generation'], self.day[0])
+        self.assertEqual(backend.contents()['contacts'], before['contacts'])
+        self.assertEqual(backend.contents()['main'], [])
+        self.assertEqual(backend.contents()['auxiliary'], [])
+        self.assertEqual(backend.events.count(('purge',)), 1)
+
+    def test_manual_reset_rejects_stale_missing_or_unconfirmed_payload_without_changes(self):
+        value, backend = self.populated()
+        before = backend.contents()
+        confirmation = self.reset_confirmation(value)
+        for payload in (None, {}, {**confirmation, 'expectedRevision': NEXT_REVISION},
+                        {**confirmation, 'expectedGeneration': '2020-01-01'},
+                        {**confirmation, 'discardEphemeral': False}, {**confirmation, 'extra': True}):
+            with self.subTest(payload=payload), self.assertRaises(self.module.RuntimeErrorSafe):
+                value.reset_now(payload)
+        self.assertEqual(backend.contents(), before)
+        self.assertNotIn(('purge',), backend.events)
+
+    def test_manual_reset_rejects_pending_stopping_and_inactive_states(self):
+        value, backend = self.populated()
+        confirmation = self.reset_confirmation(value)
+        paths = [value.control/name for name in ('release-pending.json', 'upgrade-pending.json',
+                                                'reset-pending.json', 'adoption-pending.json')]
+        paths += [self.root/'runtime/pb_data'/name for name in ('maintenance.json', 'initialization.pending', 'restoration.pending')]
+        paths += [self.root/'persistent'/name for name in ('migration-fenced.json', 'recovery.pending')]
+        for path in paths:
+            self.module.atomic(path, {'synthetic': True})
+            with self.subTest(marker=path.name), self.assertRaises(self.module.RuntimeErrorSafe):
+                value.reset_now(confirmation)
+            path.unlink()
+        value.stop_event.set()
+        with self.assertRaises(self.module.RuntimeErrorSafe):value.reset_now(confirmation)
+        value.stop_event.clear()
+        value.ready = False
+        with self.assertRaises(self.module.RuntimeErrorSafe):value.reset_now(confirmation)
+        value.ready = True
+        self.day[0] = '2026-10-10'
+        with self.assertRaises(self.module.RuntimeErrorSafe):value.reset_now(confirmation)
+        self.assertNotIn(('purge',), backend.events)
+
+    def test_manual_reset_failed_purge_leaves_durable_fence_and_preserves_contacts(self):
+        from unittest.mock import patch
+        value, backend = self.populated()
+        before = backend.contents()
+        with patch.object(backend, 'purge_ephemeral', side_effect=RuntimeError('synthetic purge failure')):
+            with self.assertRaises(RuntimeError):value.reset_now(self.reset_confirmation(value))
+        self.assertFalse(value.ready or backend.opened or backend.app)
+        self.assertTrue((value.control/'reset-pending.json').is_file())
+        self.assertEqual(backend.contents()['contacts'], before['contacts'])
+
     def test_reset_selects_version_aware_s3_except_exact_r2_endpoints(self):
         from unittest.mock import Mock, patch
         backend = self.module.Backend(self.root, 'https://synthetic.invalid')
@@ -701,6 +781,36 @@ os._exit(23)
 
 
 class OnceRuntimeProcessTests(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get('VAULTCONTEXT_TEST_BINARY') and os.environ.get('VAULTCONTEXT_TEST_LITESTREAM'),
+                         'set verified pinned server and Litestream paths for process fixture')
+    def test_manual_same_day_reset_with_real_server_and_replicas(self):
+        import shutil
+        module = runtime_module()
+        class ResetBackend(ProcessBackend):
+            def purge_ephemeral(self):
+                super().purge_ephemeral()
+                if self.replication is not None:
+                    raise AssertionError('replication must drain before purge')
+                for name in ('data.db', 'auxiliary.db'):
+                    shutil.rmtree(self.remote/name)
+        with tempfile.TemporaryDirectory(prefix='once-manual-reset-') as temporary:
+            root = Path(temporary)/'storage'
+            backend = ResetBackend(root, os.environ['VAULTCONTEXT_TEST_BINARY'], os.environ['VAULTCONTEXT_TEST_LITESTREAM'])
+            value = module.Runtime(root, REVISION, backend)
+            try:
+                value.start();value.configure(fixture_bindings());value.initialize()
+                document, _ = backend.populate_real()
+                contacts = module.database_snapshot(root/'persistent/contacts.db')
+                result = value.reset_now({'expectedGeneration': value.generation, 'expectedRevision': REVISION,
+                                          'discardEphemeral': True})
+                self.assertTrue(result['ready'])
+                self.assertEqual(backend.events.count(('purge',)), 1)
+                self.assertEqual(module.database_snapshot(root/'persistent/contacts.db'), contacts)
+                with closing(sqlite3.connect(root/'runtime/pb_data/data.db')) as db:
+                    self.assertEqual(db.execute('SELECT COUNT(*) FROM documents WHERE id=?', (document,)).fetchone()[0], 0)
+                self.assertFalse((value.control/'reset-pending.json').exists())
+            finally:value.close()
+
     @unittest.skipUnless(os.environ.get('VAULTCONTEXT_TEST_BINARY') and os.environ.get('VAULTCONTEXT_TEST_LITESTREAM'),
                          'set verified pinned server and Litestream paths for process fixture')
     def test_populated_three_database_release_with_real_server_and_local_replicas(self):
