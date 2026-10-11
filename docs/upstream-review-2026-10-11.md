@@ -49,4 +49,5 @@ applications' pins are unchanged.
 The server commit must be available remotely before the demo's normal CI/image
 build can use this pin. It is published on `private-scoped-search`; this adoption
 does not merge that branch into server `main`. Application release validation
-and deployment evidence are recorded separately from the initial local review.
+and deployment evidence are recorded in the [release receipt](release-2026-10-11.md),
+separately from the initial local review.

@@ -96,4 +96,4 @@ container nginx tests.
 At the end of initial local validation, the server commit and demo changes were
 unpublished and undeployed. The authorized release follows server publication,
 then the normal demo CI and deployment workflow; its outcome is recorded in a
-separate release receipt.
+[release receipt](release-2026-10-11.md).
