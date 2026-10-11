@@ -31,6 +31,13 @@ def main():
         assert crypto.unwrap_identity(__import__('json').loads(new),'new synthetic passphrase',account)==identity
         events=request('POST','/api/context/query',{'sql':"SELECT actor,action,target FROM audit_log WHERE action='identity_rewrap'"},token)
         assert events['rows']==[[account,'identity_rewrap',account]],events
+        # Maintenance-created fixtures must not widen the actor-only exception
+        # to unrelated account-level events or another actor's replacement.
+        for actor,op in ((account,'synthetic_private_event'),('x'*15,'identity_rewrap')):
+            request('POST','/api/collections/audit_log/records',
+                    {'vault':'','actor':actor,'action':op,'target':actor},admin)
+        events=request('POST','/api/context/query',{'sql':"SELECT actor,action,target FROM audit_log WHERE vault=''"},token)
+        assert events['rows']==[[account,'identity_rewrap',account]],events
     print('Signed identity replacement: PASS')
 
 

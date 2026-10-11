@@ -222,6 +222,32 @@ class ContactTests(unittest.TestCase):
             row=db.execute('SELECT * FROM suppression').fetchone()
             self.assertEqual((row['sales'],row['newsletter']),(1,1))
 
+    def test_enrollment_observation_is_atomic_with_preferences(self):
+        body = {**self.body, 'security': {'event':'enrollment_request','ip':'192.0.2.5','timestamp':1000}}
+        with patch.object(self.store, 'record_security', side_effect=RuntimeError('synthetic failure')):
+            with self.assertRaises(RuntimeError):
+                self.store.enroll(body, now=1000)
+        self.assertEqual(self.store.preferences(self.body['subject'])['revision'], 0)
+        with self.store.connect() as db:
+            for table in ('contacts', 'consent_events', 'unsubscribe_tokens', 'security_events'):
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM '+table).fetchone()[0], 0)
+        self.store.enroll(body, now=1000)
+        self.store.enroll({**body, 'expectedRevision':1}, now=1001)
+        with self.store.connect() as db:
+            events = db.execute('SELECT event,ip FROM security_events').fetchall()
+            self.assertEqual([tuple(row) for row in events], [('enrollment_request','192.0.2.5')])
+        with self.assertRaises(retention.Rejected):
+            self.store.enroll({**body, 'expectedRevision':2, 'security':{**body['security'], 'event':'auth_success'}}, now=1002)
+        self.assertEqual(self.store.preferences(self.body['subject'])['revision'], 2)
+
+    def test_unsubscribe_token_length_boundaries(self):
+        for token in [*('x'*length for length in (20,31,129,256)), '\U0001f600'*16, '\u00e9'*32, 'x'*32+'\n', ' '*32, '/'*32]:
+            with self.assertRaises(retention.Rejected) as failure:
+                self.store.unsubscribe(token)
+            self.assertEqual(failure.exception.status, 400)
+        for length in (32, 128):
+            self.assertEqual(self.store.unsubscribe('x'*length), {'ok':True})
+
     def test_security_validation_and_deduplication(self):
         body = {'event':'enrollment','ip':'2001:db8::1','timestamp':1000}
         self.store.security(body, now=1000)

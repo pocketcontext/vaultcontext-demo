@@ -193,7 +193,6 @@ def reset(config, generation, dry_run=False, clients=None):
         else:
             state = {'deployment': 'vaultcontext-demo', 'generation': generation, 'phase': 'pending'}
             atomic_json(pending, state)
-            if (control/'app-state').is_dir():atomic_json(control/'app-state/reset-pending.json',state)
         if (control/'app-state').is_dir():atomic_json(control/'app-state/reset-pending.json',state)
         def phase(value):
             state['phase'] = value

@@ -90,7 +90,7 @@ ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/vaultcontext-entrypoint.py"]
 
 ARG REVISION=unknown
 RUN printf '%s\n' "${REVISION}" > /usr/local/share/vaultcontext-revision
-LABEL org.opencontainers.image.title="VaultContext" \
+LABEL org.opencontainers.image.title="VaultContext Demo" \
       org.opencontainers.image.description="Encrypted files operated through a coding agent: PocketContext server, vault migrations and hooks, Litestream replication" \
       org.opencontainers.image.source="https://github.com/pocketcontext/vaultcontext-demo" \
       org.opencontainers.image.revision="${REVISION}"

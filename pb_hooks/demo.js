@@ -135,13 +135,14 @@ function enroll(e) {
  typeof body.salesConsent!=='boolean' || typeof body.newsletterConsent!=='boolean' ||
  !Number.isInteger(body.expectedRevision) || body.expectedRevision<0)
   throw new BadRequestError('Accept the current demo terms and choose each optional consent explicitly.');
- const contact=contacts('/enroll',{subject:subject(e.app,account),email:account.getString('email'),
-  salesContact:body.salesConsent,newsletter:body.newsletterConsent,termsVersion:TERMS,consentVersion:TERMS,expectedRevision:body.expectedRevision});
- // Daily enrollment refreshes retained last-use; no per-request tracking.
- // Log one successful enrollment per generation, using only PocketBase's
- // canonical peer/trusted-proxy result. Failure leaves vault access closed.
+ // Contact consent and its request event commit together before vault admission.
+ // A later app failure keeps that explicit preference decision; refresh its
+ // revision before retrying. This event does not assert successful admission.
  const previous=e.app.findRecordsByFilter('demo_enrollments','account = {:a}','',1,0,{a:account.id});
- if(!previous.length)contacts('/security',{event:'enrollment',ip:e.realIP(),timestamp:Math.floor(Date.now()/1000)});
+ const decision={subject:subject(e.app,account),email:account.getString('email'),
+  salesContact:body.salesConsent,newsletter:body.newsletterConsent,termsVersion:TERMS,consentVersion:TERMS,expectedRevision:body.expectedRevision};
+ if(!previous.length)decision.security={event:'enrollment_request',ip:e.realIP(),timestamp:Math.floor(Date.now()/1000)};
+ const contact=contacts('/enroll',decision);
  e.app.runInTransaction(app=>{
   current(app);
   const rows=app.findRecordsByFilter('demo_enrollments','account = {:a}','',1,0,{a:account.id});
@@ -156,7 +157,7 @@ function enroll(e) {
 function unsubscribe(e) {
  if(!enabled())throw new NotFoundError('Demo unavailable.');
  const body=e.requestInfo().body;
- if(typeof body.token!=='string' || body.token.length>256 || body.token.length<20)throw new BadRequestError('Invalid withdrawal token.');
+ if(typeof body.token!=='string' || body.token.length<32 || body.token.length>128 || /[^A-Za-z0-9_-]/.test(body.token))throw new BadRequestError('Invalid withdrawal token.');
  e.response.header().set('Cache-Control','no-store');
  return e.json(200,contacts('/unsubscribe',{token:body.token}));
 }

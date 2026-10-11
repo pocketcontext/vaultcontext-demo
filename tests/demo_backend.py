@@ -28,6 +28,10 @@ def server(binary,**options):
         for folder in ('pb_hooks','pb_migrations'):
             shutil.copytree(ROOT/folder,root/folder)
         (root/'pb_hooks/demo_tokens.pb.js').write_text("""
+onRecordCreate((e)=>{
+ if(e.record.getInt('contact_revision')===1)throw new BadRequestError('Synthetic admission failure');
+ e.next();
+},'demo_enrollments');
 routerAdd('POST','/api/synthetic/demo-tokens',(e)=>{
  if(!e.auth || e.auth.collection().name!=='_superusers')throw new ForbiddenError('Test operator required');
  const user=e.app.findRecordById('users',e.requestInfo().body.account);
@@ -124,11 +128,23 @@ def main():
         request('POST','/api/demo/enroll',{**enroll,'generation':'2000-01-01'},at,400)
         for token in (at,bt):
             prefs=request('GET','/api/demo/preferences',token=token);assert prefs['revision']==0
-            result=request('POST','/api/demo/enroll',enroll,token);assert result['enrolled']
+            # Contact consent commits independently; failed vault admission stays closed.
+            request('POST','/api/demo/enroll',enroll,token,400)
+            act(token,'identity_init',identity,403)
+            prefs=request('GET','/api/demo/preferences',token=token);assert prefs['revision']==1
+            request('POST','/api/demo/enroll',enroll,token,409)
+            result=request('POST','/api/demo/enroll',{**enroll,'expectedRevision':prefs['revision']},token);assert result['enrolled']
             act(token,'identity_init',identity)
             # A repeated init is an identity conflict, not missing enrollment.
             act(token,'identity_init',identity,409)
         request('POST','/api/demo/enroll',enroll,at,409)
+        with store.connect() as db:
+            events=db.execute('SELECT event FROM security_events').fetchall()
+            assert events and all(row['event']=='enrollment_request' for row in events),events
+        for token in [*('x'*length for length in (20,31,129,256)), '\U0001f600'*16, '\u00e9'*32, 'x'*32+'\n', ' '*32, '/'*32]:
+            request('POST','/api/demo/unsubscribe',{'token':token},expected=400)
+        for length in (32,128):
+            request('POST','/api/demo/unsubscribe',{'token':'x'*length})
         def query(token,sql):return request('POST','/api/context/query',{'sql':sql},token)
         for token,user in ((at,alice),(bt,bob)):
             for table in ('user_directory','identities'):

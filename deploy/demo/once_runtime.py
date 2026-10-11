@@ -241,7 +241,9 @@ location = /up { add_header Cache-Control "no-store" always; proxy_pass http://1
         try:
             os.environ.update({k:v for k,v in self.bindings.items() if k in PRIMARY|REPLICA})
             for bucket,prefix in ((self.bindings['VAULTCONTEXT_S3_BUCKET'],'VAULTCONTEXT_S3'),(self.bindings['LITESTREAM_BUCKET'],'LITESTREAM')):
-                reset.S3Bucket(bucket,prefix+'_',kind='r2').erase()
+                endpoint = self.bindings[prefix+'_ENDPOINT']
+                kind = 'r2' if re.fullmatch(r'https://[a-f0-9]{32}(\.eu|\.fedramp)?\.r2\.cloudflarestorage\.com', endpoint) else 's3'
+                reset.S3Bucket(bucket,prefix+'_',kind=kind).erase()
         finally:
             for key,value in old.items():
                 if value is None:os.environ.pop(key,None)

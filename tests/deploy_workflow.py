@@ -78,14 +78,15 @@ class DeploymentTests(unittest.TestCase):
         program=demo_script('Verify running demo revision, assets and installation',DEMO_DEPLOY).split("python3 - <<'PY'\n",1)[1].rsplit('\nPY',1)[0]
         origin='https://vault-demo.pocketcontext.com'
         pin=re.search(r'vaultcontext-demo\.git@([0-9a-f]{40})',(ROOT/'skills/vaultcontext/vaultcontext').read_text()).group(1)
-        for mode in ('success','generation','asset','pin','foreign','unready','legacy','revision','changed','redirect'):
+        for mode in ('success','generation','asset','pin','foreign','unready','legacy','revision','changed','redirect','old_release','missing_expected','invalid_expected'):
             with self.subTest(mode=mode):
                 installation={'method':'skills','skill':'vaultcontext',
                     'source':'https://github.com/pocketcontext/vaultcontext-demo/tree/main/skills/vaultcontext',
                     'clientRevision':pin}
                 if mode=='foreign':installation['source']='https://foreign.example/skill'
                 if mode=='pin':installation['clientRevision']='0'*40
-                revision='d'*40  # Deliberately differs from the triggering checkout.
+                revision='d'*40
+                expected_revision = 'c'*40 if mode=='old_release' else '' if mode=='missing_expected' else 'invalid' if mode=='invalid_expected' else revision
                 source='https://raw.githubusercontent.com/pocketcontext/vaultcontext-demo/'+revision
                 responses={'/up':json.dumps({'ready':True,'revision':'invalid' if mode=='revision' else revision}).encode()}
                 source_responses={'/skills/vaultcontext/vaultcontext':(ROOT/'skills/vaultcontext/vaultcontext').read_bytes()}
@@ -115,7 +116,7 @@ class DeploymentTests(unittest.TestCase):
                             body=json.dumps({'ready':True,'revision':'e'*40}).encode()
                     data=io.BytesIO(body);data.status=200;data.geturl=lambda:'https://foreign.example/' if mode=='redirect' else url
                     return data
-                with patch('urllib.request.urlopen',side_effect=fetch),patch('time.sleep'),patch('builtins.print'):
+                with patch('urllib.request.urlopen',side_effect=fetch),patch('time.sleep'),patch('builtins.print'),patch.dict(os.environ, GITHUB_SHA=expected_revision):
                     original=os.getcwd();os.chdir(ROOT)
                     try:
                         if mode=='success':exec(program,{})

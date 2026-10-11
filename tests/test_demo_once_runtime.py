@@ -312,6 +312,28 @@ class OnceRuntimeStateTests(unittest.TestCase):
         self.instances = []
         self.addCleanup(self.close_all)
 
+    def test_reset_selects_version_aware_s3_except_exact_r2_endpoints(self):
+        from unittest.mock import Mock, patch
+        backend = self.module.Backend(self.root, 'https://synthetic.invalid')
+        for endpoint, kind in (
+            ('https://' + 'a'*32 + '.r2.cloudflarestorage.com', 'r2'),
+            ('https://' + 'a'*32 + '.eu.r2.cloudflarestorage.com', 'r2'),
+            ('https://synthetic.invalid', 's3'),
+            ('https://' + 'a'*32 + '.r2.cloudflarestorage.com.attacker.invalid', 's3'),
+        ):
+            with self.subTest(endpoint=endpoint):
+                bindings = fixture_bindings()
+                bindings['VAULTCONTEXT_S3_ENDPOINT'] = endpoint
+                backend.configure(bindings)
+                reset = Mock()
+                before = dict(os.environ)
+                with patch.object(self.module, 'load_module', return_value=reset):
+                    backend.purge_ephemeral()
+                self.assertEqual(reset.S3Bucket.call_args_list[0].kwargs, {'kind': kind})
+                self.assertEqual(reset.S3Bucket.call_args_list[1].kwargs, {'kind': 's3'})
+                self.assertEqual(reset.S3Bucket.return_value.erase.call_count, 2)
+                self.assertEqual(dict(os.environ), before)
+
     def test_release_identity_requires_dedicated_repository_digest(self):
         request = {'image': IMAGE, 'revision': REVISION}
         self.assertEqual(self.module.spec(request), request)

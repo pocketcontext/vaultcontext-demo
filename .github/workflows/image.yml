@@ -69,6 +69,7 @@ jobs:
           VAULTCONTEXT_TEST_BINARY="$RUNNER_TEMP/pocketcontext-maintenance" VAULTCONTEXT_TEST_LITESTREAM="$RUNNER_TEMP/vaultcontext-litestream" uv run --locked python -m unittest discover -s tests -p test_demo_auxiliary_replication.py
           VAULTCONTEXT_TEST_BINARY="$RUNNER_TEMP/pocketcontext-maintenance" VAULTCONTEXT_TEST_LITESTREAM="$RUNNER_TEMP/vaultcontext-litestream" uv run --locked python -m unittest discover -s tests -p test_demo_once_runtime.py
           VAULTCONTEXT_TEST_BINARY="$RUNNER_TEMP/pocketcontext-maintenance" VAULTCONTEXT_TEST_LITESTREAM="$RUNNER_TEMP/vaultcontext-litestream" uv run --locked python -m unittest discover -s tests -p test_demo_standard_runtime.py
+          VAULTCONTEXT_TEST_BINARY="$RUNNER_TEMP/pocketcontext-maintenance" VAULTCONTEXT_TEST_LITESTREAM="$RUNNER_TEMP/vaultcontext-litestream" uv run --locked python -m unittest discover -s tests -p test_demo_compatibility.py
       - name: Cloudflare client IP and direct-origin spoof resistance
         run: |
           docker run --rm --entrypoint python3 \
@@ -293,11 +294,14 @@ jobs:
       - name: Verify running demo revision, assets and installation
         run: |
           python3 - <<'PY'
-          import hashlib, json, re, time
+          import hashlib, json, os, re, time
           from datetime import datetime, timezone
           from urllib.request import Request, urlopen
           from urllib.error import HTTPError
           origin = 'https://vault-demo.pocketcontext.com'
+          expected_revision = os.environ.get('GITHUB_SHA', '')
+          if not re.fullmatch(r'[0-9a-f]{40}', expected_revision):
+              raise SystemExit('Invalid expected deployment revision')
           def fetch(path, limit=4194304, base=origin):
               request = Request(base + path, headers={'User-Agent': 'VaultContext-Demo-Release-Check/1.0'})
               with urlopen(request, timeout=20) as response:
@@ -312,6 +316,8 @@ jobs:
               revision = runtime.get('revision', '')
               if runtime.get('ready') is not True or not re.fullmatch(r'[0-9a-f]{40}', revision):
                   raise ValueError('Public demo runtime is not ready')
+              if revision != expected_revision:
+                  raise ValueError('Public demo is not serving the requested deployment revision')
               source = 'https://raw.githubusercontent.com/pocketcontext/vaultcontext-demo/' + revision
               status = json.loads(fetch('/api/demo/status', 32768))
               day = datetime.now(timezone.utc).date().isoformat()

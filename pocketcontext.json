@@ -111,12 +111,13 @@
       "versions": "EXISTS (SELECT 1 FROM memberships m WHERE m.vault = versions.vault AND m.account = :requester AND m.active = 1)",
       "version_chunks": "EXISTS (SELECT 1 FROM memberships m WHERE m.vault = version_chunks.vault AND m.account = :requester AND m.active = 1)",
       "invitations": "account = :requester OR EXISTS (SELECT 1 FROM vaults v WHERE v.id = invitations.vault AND v.owner = :requester)",
-      "audit_log": "(vault = '' AND actor = :requester) OR (EXISTS (SELECT 1 FROM memberships m WHERE m.vault = audit_log.vault AND m.account = :requester AND m.active = 1))"
+      "audit_log": "(audit_log.vault = '' AND audit_log.actor = :requester AND audit_log.action = 'identity_rewrap') OR EXISTS (SELECT 1 FROM memberships m WHERE m.vault = audit_log.vault AND m.account = :requester AND m.active = 1)"
     },
     "timeoutMs": 5000,
     "maxRows": 100000,
     "maxBytes": 33554432,
     "maxConcurrent": 2,
+    "maxConcurrentPerRequester": 1,
     "policyTables": {
       "demo_policy": [
         "enabled"

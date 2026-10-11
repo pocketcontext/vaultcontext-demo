@@ -57,7 +57,11 @@ The preserved branch contains these upstream review candidates:
 | `8b8b177` | Check access and existing identity before prompting during `init`; preserve existing identities and useful enrollment/access failures. Review generic initialization safety separately from demo-only errors. |
 | `78e0308` | Google-only CLI login removes password login and the old `--google` flag. This is an authentication/product policy choice, not an automatic security backport. Core adoption requires its own compatibility decision and tests. |
 
-These are review candidates, not claims that core VaultContext has adopted them.
+Core `64ac048` subsequently adopted the signed replacement, initialization and
+fingerprint-file protections from the first two rows. See the
+[11 October upstream review](upstream-review-2026-10-11.md) for the demo's selective
+adoption and exclusions of subsequent core changes. Google-only CLI login remains
+a separate policy choice.
 Changes to identity signatures require coordinated client/backend tests, including
 `tests/identity_rewrap.py`. Initialization and login changes need client, OAuth,
 portable-launcher and integration validation in the adopting repository.

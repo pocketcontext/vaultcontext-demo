@@ -47,6 +47,7 @@ Additional isolated validation:
 uv run --locked python -m unittest discover -s tests -p 'test_demo_*.py'
 uv run --locked python tests/demo_backend.py --binary /path/to/pinned/pocketcontext
 uv run --locked python tests/identity_rewrap.py --binary /path/to/pinned/pocketcontext
+uv run --locked python tests/demo_sql_contention.py --binary /path/to/pinned/pocketcontext --expect-protected
 uv run --locked python -m unittest discover -s tests -p test_demo_installation.py
 uv run --with playwright==1.60.0 python tests/demo_website.py
 ```
@@ -318,3 +319,6 @@ review, especially security fixes. Validate both applications independently with
 their pinned servers and synthetic data; a passing demo suite does not establish
 core compatibility. Publish package changes before advancing the portable
 launcher pin and verify the copied launcher from an unrelated directory.
+
+The [11 October 2026 upstream review](docs/upstream-review-2026-10-11.md) records
+the selective audit-filter adoption and exclusions from core's release gate.

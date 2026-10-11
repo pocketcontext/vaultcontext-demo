@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import re
 import signal
 import threading
 import sqlite3
@@ -119,7 +120,10 @@ class Store:
     def enroll(self, body, now=None):
         now = int(time.time() if now is None else now)
         allowed = {'subject', 'email', 'salesContact', 'newsletter', 'termsVersion', 'consentVersion', 'expectedRevision'}
-        if not isinstance(body, dict) or set(body) != allowed:
+        if not isinstance(body, dict) or set(body) not in (allowed, allowed | {'security'}):
+            raise Rejected()
+        security = self.security_observation(body['security'], now) if 'security' in body else None
+        if security and security['event'] != 'enrollment_request':
             raise Rejected()
         subject = self.subject(body['subject'])
         email = body['email']
@@ -152,6 +156,8 @@ class Store:
                 token_hash=excluded.token_hash''',
                 (subject, email, sales, newsletter, revision, now, review,
                  body['termsVersion'], body['consentVersion'], hashlib.sha256(token.encode()).hexdigest()))
+            # Keep every issued withdrawal capability until contact deletion/expiry.
+            # Rotating preferences must not silently break an earlier link.
             db.execute('INSERT INTO unsubscribe_tokens VALUES (?,?)', (hashlib.sha256(token.encode()).hexdigest(), subject))
             db.execute('INSERT INTO consent_events(subject,at,sales,newsletter,terms,consent,revision) VALUES (?,?,?,?,?,?,?)',
                        (subject, now, sales, newsletter, body['termsVersion'], body['consentVersion'], revision))
@@ -164,6 +170,8 @@ class Store:
                     (email, block_sales, block_news, now))
             else:
                 db.execute('DELETE FROM suppression WHERE email=?', (email,))
+            if security:
+                self.record_security(db, security, now)
             return {'salesContact': bool(sales), 'newsletter': bool(newsletter), 'revision': revision,
                     'reviewDue': review, 'unsubscribeToken': token}
 
@@ -174,7 +182,7 @@ class Store:
         return {'ok': True}
 
     def unsubscribe(self, token, now=None):
-        if not isinstance(token, str) or not 32 <= len(token) <= 128:
+        if not isinstance(token, str) or not re.fullmatch(r'[A-Za-z0-9_-]{32,128}', token):
             raise Rejected()
         now = int(time.time() if now is None else now)
         digest = hashlib.sha256(token.encode()).hexdigest()
@@ -190,11 +198,12 @@ class Store:
         # Same response for absent/expired tokens; capabilities do not enumerate addresses.
         return {'ok': True}
 
-    def security(self, body, now=None):
-        now = int(time.time() if now is None else now)
+    @staticmethod
+    def security_observation(body, now):
         if not isinstance(body, dict) or set(body) != {'event', 'ip', 'timestamp'}:
             raise Rejected()
-        if body['event'] not in ('enrollment', 'auth_success', 'auth_failure'):
+        # Historical enrollment observations remain accepted by maintenance clients.
+        if body['event'] not in ('enrollment', 'enrollment_request', 'auth_success', 'auth_failure'):
             raise Rejected()
         if type(body['timestamp']) is not int or abs(now-body['timestamp']) > 300:
             raise Rejected()
@@ -204,13 +213,22 @@ class Store:
             address = str(ipaddress.ip_address(body['ip']))
         except ValueError:
             raise Rejected() from None
+        return {**body, 'ip': address}
+
+    @staticmethod
+    def record_security(db, body, now):
+        # Bound repeated identical observations in a one-minute interval.
+        duplicate = db.execute('SELECT 1 FROM security_events WHERE event=? AND ip=? AND at>=?',
+                               (body['event'], body['ip'], now-60)).fetchone()
+        if not duplicate:
+            db.execute('INSERT INTO security_events(at,event,ip) VALUES (?,?,?)',
+                       (body['timestamp'], body['event'], body['ip']))
+
+    def security(self, body, now=None):
+        now = int(time.time() if now is None else now)
+        observation = self.security_observation(body, now)
         with self.connect() as db:
-            # Bound repeated identical observations in a one-minute interval.
-            duplicate = db.execute('SELECT 1 FROM security_events WHERE event=? AND ip=? AND at>=?',
-                                   (body['event'], address, now-60)).fetchone()
-            if not duplicate:
-                db.execute('INSERT INTO security_events(at,event,ip) VALUES (?,?,?)',
-                           (body['timestamp'], body['event'], address))
+            self.record_security(db, observation, now)
         return {'ok': True}
 
     def review_queue(self, body, now=None):

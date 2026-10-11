@@ -61,6 +61,8 @@ jobs:
           for check in maintenance integration archive_migration auth oauth_integration realtime skill cli_forward deploy backup_integration limits demo_backend identity_rewrap; do
             uv run --locked --project vaultcontext python "vaultcontext/tests/$check.py" --binary "$PWD/pocketcontext/bin/pocketcontext"
           done
+      - name: SQL admission preserves another visitor's access
+        run: uv run --locked --project vaultcontext python vaultcontext/tests/demo_sql_contention.py --binary "$PWD/pocketcontext/bin/pocketcontext" --expect-protected
       - name: Fenced demo reset with a real isolated server
         if: runner.os == 'Linux'
         run: VAULTCONTEXT_DEMO_TEST_BINARY="$PWD/pocketcontext/bin/pocketcontext" uv run --locked --project vaultcontext python -m unittest discover -s vaultcontext/tests -p test_demo_reset.py

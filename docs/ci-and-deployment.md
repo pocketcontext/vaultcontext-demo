@@ -55,8 +55,9 @@ today's UTC generation and exact installation contract, and requires retired
 routes to return 404. A second `/up` read must match the first so an overlapping
 release cannot pass a mixed check. Redirects, oversized responses, unavailable
 source commits, malformed readiness and stale assets fail verification. The log
-names the verified running revision; it never claims that `latest` selected the
-triggering commit. This checks publication consistency, not Google sign-in or
+names the verified running revision and requires it to equal the triggering
+workflow’s `GITHUB_SHA`. An internally consistent older or newer release fails
+this deployment check. This checks release identity and publication consistency, not Google sign-in or
 backup durability. No automatic rollback occurs after a failure; investigate the
 durable lifecycle state before retrying.
 
@@ -159,3 +160,9 @@ three databases, ciphertext decryption and preferences after replacement and a
 same-revision restart. TLS uses a test CA trusted only by the isolated containers.
 This is a Docker replacement gate, not an ONCE control-plane or real Google test.
 Both native image CI runners execute it before publication.
+
+Daily reset uses the R2 adapter only for exact Cloudflare account endpoints.
+Other HTTPS S3 endpoints use the version-aware adapter, including deletion and
+verification of retained versions, delete markers and unfinished uploads.
+Unsupported listing APIs or incomplete deletion block reset rather than silently
+retaining disposable data. Durable contact storage is excluded.

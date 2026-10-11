@@ -1,5 +1,10 @@
 # Demo implementation validation — 9 October 2026
 
+This file preserves historical validation. The final **Root-path / skill-only
+release** section supersedes all hosted-wheel, download-readiness and fallback
+installation descriptions below. Current installation uses the public Git-backed
+skill only; see the README.
+
 ## Google popup correction — local validation, 9 October 2026
 
 The live Chrome flow returned “Google sign-in was closed” after Google consent.
