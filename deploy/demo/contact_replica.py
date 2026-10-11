@@ -97,7 +97,7 @@ class Replica:
         if not re.fullmatch(r'[0-9]+',hours) or not 1<=int(hours)<=672:
             raise ReplicaError('contact replica retention must be finite, from 1 to 672 hours')
         self.env['CONTACTS_LITESTREAM_RETENTION_HOURS']=hours
-        self.env.setdefault('CONTACTS_LITESTREAM_SYNC_INTERVAL','1s')
+        self.env.setdefault('CONTACTS_LITESTREAM_SYNC_INTERVAL','10s')
         if not re.fullmatch(r'[1-9][0-9]?[sm]',self.env['CONTACTS_LITESTREAM_SYNC_INTERVAL']):
             raise ReplicaError('invalid contact sync interval')
         self.env.update(CONTACTS_DATABASE=str(self.database),CONTACTS_REPLICA_SOCKET=str(self.socket))
@@ -110,7 +110,7 @@ class Replica:
             self.config=str(self.root/'local-litestream.yml')
             content=('socket:\n  enabled: true\n  path: '+json.dumps(str(self.socket))+'\n  permissions: 0600\n'
                      'snapshot:\n  interval: 1h\n  retention: '+hours+'h\nretention:\n  enabled: true\n'
-                     'dbs:\n  - path: '+json.dumps(str(self.database))+'\n    replica:\n      type: file\n      path: '+json.dumps(str(replica))+'\n      sync-interval: 1s\n')
+                     'dbs:\n  - path: '+json.dumps(str(self.database))+'\n    replica:\n      type: file\n      path: '+json.dumps(str(replica))+'\n      sync-interval: '+json.dumps(self.env['CONTACTS_LITESTREAM_SYNC_INTERVAL'])+'\n')
             fd=os.open(self.config,os.O_WRONLY|os.O_CREAT|os.O_TRUNC|os.O_NOFOLLOW,0o600)
             with os.fdopen(fd,'w') as stream:stream.write(content)
         else:

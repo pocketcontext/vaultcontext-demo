@@ -21,6 +21,16 @@ import contact_replica as replica
 import retention
 
 class ContactReplicaTests(unittest.TestCase):
+    def test_contact_replica_defaults_to_ten_seconds_and_honors_override(self):
+        for override, expected in ((None, '10s'), ('2s', '2s')):
+            with self.subTest(override=override), tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {}, clear=True):
+                if override is not None:
+                    os.environ['CONTACTS_LITESTREAM_SYNC_INTERVAL'] = override
+                value = replica.Replica(Path(tmp)/'state/contacts.db', 'unused', 'unused', 'unused',
+                                        local_replica=Path(tmp)/'remote')
+                self.assertEqual(value.env['CONTACTS_LITESTREAM_SYNC_INTERVAL'], expected)
+                self.assertIn('sync-interval: '+json.dumps(expected), Path(value.config).read_text())
+
     def test_credentials_are_separated(self):
         env=replica.child_environment({'CONTACTS_LITESTREAM_ACCESS_KEY_ID':'contact','CONTACTS_LITESTREAM_SECRET_ACCESS_KEY':'synthetic',
               'LITESTREAM_ACCESS_KEY_ID':'ephemeral','VAULTCONTEXT_S3_BUCKET':'ephemeral','AWS_SESSION_TOKEN':'synthetic'})
