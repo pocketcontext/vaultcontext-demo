@@ -103,12 +103,11 @@ const cancelGoogleButton = byId('cancel-google');
 let cancelGoogleLogin = null;
 cancelGoogleButton.addEventListener('click', () => cancelGoogleLogin?.());
 function canContinue() {
-  return !busy && signedIn && byId('terms').checked && (!live ||
+  return !busy && signedIn && (!live ||
     (Number.isInteger(revision) && revision >= 0 && !!token && !!account && pb.authStore.isValid && Date.now() < Date.parse(live.resetAt)));
 }
 function syncContinue() { document.querySelector('.continue-button').disabled = !canContinue(); }
 function setBusy(value) { busy = value; byId('signout').disabled = value; syncContinue(); }
-byId('terms').addEventListener('change', syncContinue);
 function message(value) { byId('form-status').textContent = value; }
 async function api(path, body, authenticated = false) {
   const epoch = authEpoch;
@@ -248,7 +247,7 @@ byId('signout').addEventListener('click', signout);
 byId('enrollment-form').addEventListener('submit', async event => {
   event.preventDefault(); if (busy) return;
   if (!signedIn) { message(live ? 'Sign in with Google before continuing.' : 'First simulate Google sign-in. No Google account is needed.'); googleButton.focus(); return; }
-  if (!canContinue()) return;
+  if (!canContinue() || !byId('terms').checked) return;
   if (!live) { message('Preview opened. No account or preferences have been saved.'); showOnboarding(); return; }
   setBusy(true); const submit = document.querySelector('.continue-button'); submit.disabled = true;
   try {

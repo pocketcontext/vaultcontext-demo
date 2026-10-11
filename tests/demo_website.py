@@ -31,7 +31,10 @@ with sync_playwright() as p:
  assert page.locator('.continue-button').is_disabled(), 'Accepting terms alone does not sign in'
  page.locator('#google-button').click()
  assert page.locator('.continue-button').is_enabled()
- page.locator('#terms').uncheck();assert page.locator('.continue-button').is_disabled()
+ page.locator('#terms').uncheck();assert page.locator('.continue-button').is_enabled()
+ page.locator('.continue-button').focus();page.keyboard.press('Enter')
+ assert page.locator('#terms').evaluate('(el)=>el === document.activeElement && el.validity.valueMissing && !!el.validationMessage')
+ assert not page.locator('#onboarding').is_visible(), 'Unchecked terms must not open preview onboarding'
  page.locator('#terms').check();page.locator('.continue-button').click()
  assert page.locator('#onboarding').is_visible()
  assert not page.locator('#commercial').is_checked() and not page.locator('#newsletter').is_checked()
@@ -72,7 +75,7 @@ with sync_playwright() as p:
  page.locator('#terms').uncheck()
  # A COOP-severed window handle reports closed before the independent callback.
  page.locator('#google-button').click();page.wait_for_selector('#identity:visible');assert 'Synthetic Visitor' in page.locator('#identity').inner_text()
- assert page.locator('.continue-button').is_disabled(), 'Signed in still requires terms acceptance'
+ assert page.locator('.continue-button').is_enabled(), 'Ready visitors can submit to discover required terms'
  # Signed-in account text must stay in its own column, including long identities.
  assert page.locator('#identity-email').inner_text()=='demo@example.com'
  assert page.locator('.avatar').inner_text()=='S'
@@ -91,7 +94,16 @@ with sync_playwright() as p:
  page.set_viewport_size({'width':1440,'height':1000})
  page.evaluate("setIdentity('demo@example.com', 'Synthetic Visitor')")
  page.locator('#terms').check();assert page.locator('.continue-button').is_enabled()
- page.locator('#terms').uncheck();assert page.locator('.continue-button').is_disabled()
+ page.locator('#terms').uncheck();assert page.locator('.continue-button').is_enabled()
+ enrollment_count=sum(path=='/api/demo/enroll' for path,_ in calls)
+ page.locator('.continue-button').click()
+ assert page.locator('#terms').evaluate('(el)=>el === document.activeElement && el.validity.valueMissing && !!el.validationMessage')
+ assert not pending_enroll and sum(path=='/api/demo/enroll' for path,_ in calls)==enrollment_count
+ # The explicit submit guard also protects synthetic events that skip browser validation.
+ page.locator('#enrollment-form').evaluate('(form)=>form.dispatchEvent(new Event("submit", {bubbles:true, cancelable:true}))')
+ page.wait_for_timeout(100)
+ assert not pending_enroll and sum(path=='/api/demo/enroll' for path,_ in calls)==enrollment_count
+ assert not page.locator('#commercial').is_checked() and not page.locator('#newsletter').is_checked()
  page.locator('#terms').check();page.locator('.continue-button').click()
  page.wait_for_function('document.querySelector("#signout").disabled')
  assert pending_enroll
@@ -289,7 +301,7 @@ with sync_playwright() as p:
  assert first.locator('#identity-email').inner_text()=='demo@example.com'
  assert not first.locator('#onboarding').is_visible(), 'Restoring login must not fabricate enrollment'
  first.reload();first.wait_for_selector('#identity:visible')
- assert not first.locator('#terms').is_checked() and first.locator('.continue-button').is_disabled(), 'Restoring auth must not restore terms acceptance'
+ assert not first.locator('#terms').is_checked() and first.locator('.continue-button').is_enabled(), 'Restoring auth must not restore terms acceptance'
  assert not first.locator('#commercial').is_checked() and not first.locator('#newsletter').is_checked()
  second=context.new_page();second.goto('http://session.test/');second.wait_for_selector('#identity:visible')
  second.locator('#terms').check();second.wait_for_function('!document.querySelector(".continue-button").disabled')
