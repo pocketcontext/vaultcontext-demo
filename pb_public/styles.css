@@ -9,3 +9,5 @@
 .agent-prompt pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.7 system-ui,sans-serif}
 
 .contact-permissions{border-top:1px solid var(--line);margin-top:18px;padding-top:14px;font-size:11px}.contact-permissions summary{font-size:11px;text-decoration:underline;padding:5px 0}.contact-permissions p{overflow-wrap:anywhere}.contact-permissions a{color:var(--ink)}
+
+.codespaces-help h3{margin:0;font-size:18px;font-weight:500}.codespaces-help li{margin:10px 0}.codespaces-help ol{padding-left:22px}.codespaces-help summary{list-style:disclosure-closed;padding:12px 0;font-weight:600}.codespaces-help details[open]>summary{list-style:disclosure-open}.codespaces-help summary::-webkit-details-marker{display:revert}.codespaces-help code{overflow-wrap:anywhere}.codespaces-help .codebox{min-width:0}.codespaces-help pre{white-space:pre-wrap;overflow-wrap:anywhere}.codespaces-content{border-top:1px solid var(--line)}

@@ -76,6 +76,14 @@ function checkedInstallation(data) {
 function clientAvailable() { return !!checkedInstallation(live); }
 function renderInstallation() {
   const installation = checkedInstallation(live);
+  byId('codespaces-setup').textContent = installation ? `Help me try the disposable VaultContext demo in this blank GitHub Codespace. Check Node.js/npm and uv and help install missing prerequisites. Install and load the skill using npx skills add ${installation.source} --skill vaultcontext --yes. Preserve local changes and lock any existing VaultContext sessions before upgrading. Verify the installed launcher pins ${installation.clientRevision}; stop and report a mismatch. Use its actual path or make the verified launcher available on PATH; installing a skill alone does not install a PATH command.
+
+Configure VAULTCONTEXT_URL=${location.origin}. Ask which Google email I enrolled with and use that same account. Website enrollment and acceptance of terms must be complete first.
+
+Guide me to run vaultcontext login in my own interactive Codespace terminal, keeping it running. Before starting, have me prepare GitHub CLI on my computer using the demo page’s “On your computer: forward the Google login callback” section. When login is waiting, pause and direct me to start local port forwarding and open the current sign-in URL from my terminal. Never capture or repeat that URL in chat. You cannot set up forwarding on my computer from this Codespace. Its automatic GITHUB_TOKEN does not grant general Codespaces management access. If login expires, guide a fresh login; never reuse an old URL.
+
+After sign-in, run whoami and check. Guide me to initialize only if no identity exists, then unlock with a 900-second timeout in my private terminal. Never replace an existing identity. Never ask for my passphrase or tokens in chat or pass secrets through command arguments, environment variables or pipes. Wait for me to confirm private unlock before file operations.` : 'Setup prompts require a connected demo.';
+  byId('codespaces-sample').textContent = installation ? `Use the installed VaultContext skill with ${location.origin} and my enrolled Google account. Verify access and an unlocked session; if needed, guide me through private terminal unlock without asking for my passphrase. Create a harmless synthetic sample file in a new temporary directory, create a demo vault, save the sample, compare it with the saved version, and restore it to a separate new path. Use the returned record IDs. Do not inspect or print file contents, overwrite existing files, or execute restored content. Report the comparison result and paths. The daily reset deletes demo server data, not files downloaded into this Codespace. Follow the skill’s session-lifecycle rules.` : 'Sample prompts require a connected demo.';
   if (!installation) {
     byId('install-code').textContent = installExample;
     byId('install-intro').textContent = 'Live setup is unavailable until this server advertises its public skill and tested client revision. Do not use production credentials.';
@@ -384,7 +392,7 @@ document.querySelectorAll('.step-done').forEach(input => input.addEventListener(
 byId('reset-progress').addEventListener('click',()=>{ document.querySelectorAll('.step-done').forEach(input=>{input.checked=false;});updateProgress(); });
 document.querySelectorAll('.copy').forEach(button=>button.addEventListener('click',async()=>{
   const code=button.nextElementSibling.querySelector('code');
-  try { if(!navigator.clipboard)throw new Error(); await navigator.clipboard.writeText(code.textContent);button.textContent='Copied';byId('copy-status').textContent='Instructions copied. No commands have been run.';setTimeout(()=>{button.textContent=code.id === 'install-code' ? 'Copy instructions' : 'Copy';},2000); }
+  try { if(!navigator.clipboard)throw new Error(); await navigator.clipboard.writeText(code.textContent);button.textContent='Copied';byId('copy-status').textContent='Instructions copied. No commands have been run.';setTimeout(()=>{button.textContent=code.id.startsWith('codespaces-') ? 'Copy prompt' : code.id === 'install-code' ? 'Copy instructions' : 'Copy';},2000); }
   catch { const selection=window.getSelection(),range=document.createRange();range.selectNodeContents(code);selection.removeAllRanges();selection.addRange(range);button.textContent='Select & copy';byId('copy-status').textContent='Clipboard unavailable. Instructions selected; copy them manually.'; }
 }));
 document.querySelectorAll('a[href="#terms-details"],a[href="#privacy-details"]').forEach(link=>link.addEventListener('click',()=>{document.querySelector(link.getAttribute('href')).open=true;}));
