@@ -1,5 +1,8 @@
 """Standard stopped-container replacement without an external release authority."""
 from unittest.mock import patch
+from contextlib import closing
+import hashlib
+import json
 import unittest
 import test_demo_once_runtime as fixture
 
@@ -20,6 +23,41 @@ class StandardRuntimeTests(unittest.TestCase):
         self.assertTrue(candidate.ready)
         self.assertEqual(processes.contents(), before)
         self.assertFalse((self.root/'control/upgrade-pending.json').exists())
+
+    def test_valid_text_preserves_existing_baseline_hash(self):
+        self.root.mkdir()
+        path=self.root/'valid-text.db'
+        with closing(fixture.sqlite3.connect(path)) as db, db:
+            db.execute('CREATE TABLE fixture(value TEXT)')
+            db.execute('INSERT INTO fixture VALUES (?)',('synthetic café',))
+        legacy=hashlib.sha256(json.dumps(['synthetic café'],separators=(',',':'),ensure_ascii=True).encode()).hexdigest()
+        self.assertEqual(self.module.database_snapshot(path)['hashes']['fixture'],{legacy:1})
+
+    def test_malformed_text_survives_standard_replacement(self):
+        old,backend=self.populated()
+        path=old.paths()[1]
+        with closing(fixture.sqlite3.connect(path)) as db, db:
+            db.execute('CREATE TABLE fixture_log(value TEXT)')
+            db.execute("INSERT INTO fixture_log VALUES (CAST(x'80ff' AS TEXT))")
+        baseline=old.baseline();old.close()
+        candidate,processes=self.instance(fixture.NEXT_REVISION);candidate.start()
+        self.assertTrue(candidate.ready)
+        candidate.verify_baseline(baseline)
+        with closing(fixture.sqlite3.connect(path)) as db, db:
+            self.assertEqual(db.execute('SELECT hex(value),typeof(value) FROM fixture_log').fetchone(),('80FF','text'))
+            db.execute("UPDATE fixture_log SET value=CAST(x'81ff' AS TEXT)")
+        with self.assertRaises(self.module.RuntimeErrorSafe):candidate.verify_baseline(baseline)
+
+    def test_malformed_text_and_blob_have_distinct_baselines(self):
+        self.root.mkdir()
+        path=self.root/'storage-types.db'
+        with closing(fixture.sqlite3.connect(path)) as db, db:
+            db.execute('CREATE TABLE fixture(value)')
+            db.execute("INSERT INTO fixture VALUES (CAST(x'80' AS TEXT))")
+        text=self.module.database_snapshot(path)
+        with closing(fixture.sqlite3.connect(path)) as db, db:
+            db.execute("UPDATE fixture SET value=x'80'")
+        self.assertNotEqual(self.module.database_snapshot(path),text)
 
     def test_unrecognized_schema_cannot_start_writers(self):
         old, backend = self.populated();old.close()

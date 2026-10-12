@@ -130,6 +130,10 @@ def database_snapshot(path,columns=None,immutable=False):
     if path.is_symlink() or not path.is_file():raise RuntimeErrorSafe('all existing databases are required')
     quote=lambda s:'"'+s.replace('"','""')+'"'
     with closing(sqlite3.connect(path.as_uri()+'?mode=ro'+('&immutable=1' if immutable else ''),uri=True)) as db:
+        # SQLite TEXT can contain arbitrary bytes (including PocketBase log data).
+        # Preserve them losslessly while keeping valid-text baseline hashes stable.
+        # ensure_ascii below escapes surrogate bytes; BLOBs retain their own tag.
+        db.text_factory=lambda value:value.decode('utf-8',errors='surrogateescape')
         db.execute('PRAGMA query_only=ON')
         if db.execute('PRAGMA quick_check').fetchone()!=('ok',):raise RuntimeErrorSafe('database integrity failed')
         if columns is None:
