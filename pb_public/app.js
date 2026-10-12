@@ -17,6 +17,8 @@ function saveAuth(value, record) {
 }
 function clearIdentity(clearStored = true) {
   authEpoch++; token = ''; account = null; revision = null; signedIn = false;
+  unsubscribeToken = ''; byId('withdrawal-link').removeAttribute('href');
+  byId('contact-permissions').hidden = true; byId('contact-permissions').open = false;
   if (clearStored && pb) saveAuth('');
   byId('identity').hidden = true; googleButton.hidden = false; byId('signout').hidden = true;
   byId('preferences-status').hidden = true; byId('onboarding').hidden = true;
@@ -106,7 +108,14 @@ function canContinue() {
   return !busy && signedIn && (!live ||
     (Number.isInteger(revision) && revision >= 0 && !!token && !!account && pb.authStore.isValid && Date.now() < Date.parse(live.resetAt)));
 }
-function syncContinue() { document.querySelector('.continue-button').disabled = !canContinue(); }
+function syncContinue() {
+  const ready = canContinue();
+  document.querySelector('.continue-button').disabled = !ready;
+  document.querySelector('#enrollment-form fieldset').disabled = !ready;
+  document.querySelector('.enrollment-card h3').textContent = signedIn ? 'Review your choices' : 'Let’s get you started.';
+  document.querySelector('.card-intro').textContent = signedIn ? 'Accept the terms and choose your optional contact preferences.' : live ? 'Sign in, review the terms, and choose your preferences.' : 'Explore the sign-in and onboarding flow.';
+  byId('google-note').hidden = signedIn;
+}
 function setBusy(value) { busy = value; byId('signout').disabled = value; syncContinue(); }
 function message(value) { byId('form-status').textContent = value; }
 async function api(path, body, authenticated = false) {
@@ -239,9 +248,9 @@ googleButton.addEventListener('click', async () => {
     await refreshPreferences();
     if (epoch !== authEpoch || Date.now() >= Date.parse(live.resetAt)) { if (epoch === authEpoch) clearIdentity(); return; }
     saveAuth(token, account); setIdentity(account.email, account.name || 'Google account');
-    message('Signed in. Review the terms and your optional choices.'); byId('terms').focus();
+    message('Signed in. Review the terms and your optional choices.');
   } catch (error) { if (epoch === authEpoch) clearIdentity(); message(error.message); }
-  finally { setBusy(false); googleButton.disabled = false; }
+  finally { setBusy(false); googleButton.disabled = false; if (signedIn) byId('terms').focus(); }
 });
 byId('signout').addEventListener('click', signout);
 byId('enrollment-form').addEventListener('submit', async event => {
@@ -262,27 +271,13 @@ byId('enrollment-form').addEventListener('submit', async event => {
     const shellQuote = value => "'" + value.replaceAll("'", "'\\''") + "'";
     if (clientAvailable()) byId('connect-code').textContent = `export VAULTCONTEXT_URL=${shellQuote(location.origin)}\nexport VAULTCONTEXT_USER_EMAIL=${shellQuote(account.email)}\nvaultcontext login\nvaultcontext whoami\nvaultcontext check\nvaultcontext init\nvaultcontext unlock --timeout 900\nvaultcontext create 'Sample vault'`;
     byId('guide-complete').textContent = 'All three steps reviewed. Verify each operation in your terminal; the page cannot confirm CLI success.';
-    if (unsubscribeToken) {
-      let withdraw = byId('withdraw');
-      if (!withdraw) { withdraw = document.createElement('button'); withdraw.id = 'withdraw'; withdraw.type = 'button'; withdraw.className = 'link-button'; withdraw.textContent = 'Withdraw both marketing permissions'; byId('enrollment-form').after(withdraw);
-        withdraw.addEventListener('click', async () => {
-          if (busy || !unsubscribeToken) return; setBusy(true); withdraw.disabled = true;
-          try {
-            const result = await api('/api/demo/unsubscribe', {token:unsubscribeToken});
-            if (result.ok !== true) throw new Error('Withdrawal could not be confirmed. Please try again.');
-            byId('commercial').checked = false; byId('newsletter').checked = false;
-            message('Both marketing permissions withdrawn.');
-            try { await refreshPreferences(); }
-            catch {
-              revision = null;
-              byId('preferences-status').hidden = false;
-              byId('preferences-status').textContent = 'Withdrawal succeeded. The account view could not refresh; sign in again before saving any new preferences.';
-            }
-          } catch (error) { message(error.message); }
-          finally { setBusy(false); withdraw.disabled = false; }
-        });
-      }
-      withdraw.hidden = false;
+    if (/^[A-Za-z0-9_-]{32,128}$/.test(unsubscribeToken)) {
+      byId('withdrawal-link').href = location.origin + location.pathname + '#unsubscribe=' + encodeURIComponent(unsubscribeToken);
+      byId('contact-permissions').hidden = false;
+      byId('withdraw').hidden = false;
+    } else {
+      unsubscribeToken = ''; byId('withdrawal-link').removeAttribute('href');
+      byId('contact-permissions').hidden = true;
     }
     showOnboarding();
   } catch (error) {
@@ -290,6 +285,23 @@ byId('enrollment-form').addEventListener('submit', async event => {
     message(error.message);
     if (error.status === 409) { try { await refreshPreferences(); message('The latest preferences are shown. Review and submit again; nothing was retried automatically.'); } catch { message('Could not refresh preferences. Sign out and sign in again.'); } }
   } finally { setBusy(false); updateCountdown(); }
+});
+byId('withdraw').addEventListener('click', async () => {
+  if (busy || !unsubscribeToken) return;
+  setBusy(true); byId('withdraw').disabled = true;
+  try {
+    const result = await api('/api/demo/unsubscribe', {token:unsubscribeToken});
+    if (result.ok !== true) throw new Error('Withdrawal could not be confirmed. Please try again.');
+    byId('commercial').checked = false; byId('newsletter').checked = false;
+    message('Both marketing permissions withdrawn.');
+    try { await refreshPreferences(); }
+    catch {
+      revision = null;
+      byId('preferences-status').hidden = false;
+      byId('preferences-status').textContent = 'Withdrawal succeeded. The account view could not refresh; sign in again before saving any new preferences.';
+    }
+  } catch (error) { message(error.message); }
+  finally { setBusy(false); byId('withdraw').disabled = false; }
 });
 // This capability works independently of demo-day status and Google account lifetime.
 byId('confirm-withdrawal').addEventListener('click', async () => {
@@ -354,7 +366,7 @@ async function discoverLive() {
     byId('privacy-mode-note').textContent = 'Your contact preferences are saved separately from daily vault data. Use the withdrawal control after enrollment, or sign in again to review and change your choices.';
     googleButton.replaceChildren(); const g = document.createElement('span'); g.className='google-g'; g.textContent='G'; googleButton.append(g,document.createTextNode('Continue with Google'));
     byId('google-note').textContent = 'Sign in with your Google account. Your organization may restrict access.';
-    document.querySelector('.continue-button').replaceChildren(document.createTextNode('Accept terms & continue'), document.querySelector('.nav-cta .ui-icon').cloneNode(true));
+    document.querySelector('.continue-button').replaceChildren(document.createTextNode('Accept terms & show instructions'), document.querySelector('.nav-cta .ui-icon').cloneNode(true));
     byId('countdown-note').textContent = 'Reset time supplied by the demo server';
     byId('reset-description').textContent = 'Demo vault data clears every day at 00:00 UTC. Use sample files only.';
     message('Sign in with Google to continue.'); updateCountdown();

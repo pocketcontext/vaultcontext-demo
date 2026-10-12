@@ -7,3 +7,5 @@
 .ui-icon{display:inline-block;width:1.1em;height:1.1em;flex-shrink:0;vertical-align:-.15em;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.feature-symbol .ui-icon{width:32px;height:32px}.connector .ui-icon{width:18px;height:18px}
 
 .agent-prompt pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.7 system-ui,sans-serif}
+
+.contact-permissions{border-top:1px solid var(--line);margin-top:18px;padding-top:14px;font-size:11px}.contact-permissions summary{font-size:11px;text-decoration:underline;padding:5px 0}.contact-permissions p{overflow-wrap:anywhere}.contact-permissions a{color:var(--ink)}

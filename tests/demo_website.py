@@ -21,14 +21,15 @@ for document,assets in [('index.html',('styles.css','app.js')),('terms/index.htm
  for asset in assets:
   digest=hashlib.sha256((ROOT/asset).read_bytes()).hexdigest()[:12]
   assert f'{asset}?v={digest}' in markup,f'Stale asset hash: {document}: {asset}'
+ if document=='index.html':assert '<title>Try VaultContext · Public demo</title>' in markup
  assert '/demo/' not in markup, f'Obsolete page path in {document}'
 with sync_playwright() as p:
  b=p.chromium.launch(**({'executable_path':BROWSER} if BROWSER else {}))
  page=b.new_page(viewport={'width':390,'height':844})
  page.goto((ROOT/'index.html').as_uri())
  assert page.locator('.continue-button').is_disabled(), 'Preview must explain sign-in before enabling continuation'
- page.locator('#terms').check()
- assert page.locator('.continue-button').is_disabled(), 'Accepting terms alone does not sign in'
+ for choice in ('terms','commercial','newsletter'):
+  assert page.locator('#'+choice).is_visible() and page.locator('#'+choice).is_disabled(), 'Choices stay visible but require sign-in'
  page.locator('#google-button').click()
  assert page.locator('.continue-button').is_enabled()
  page.locator('#terms').uncheck();assert page.locator('.continue-button').is_enabled()
@@ -46,7 +47,7 @@ with sync_playwright() as p:
  assert page.locator('#guide-complete').is_visible();page.locator('#reset-progress').click();assert not page.locator('#guide-complete').is_visible()
  page.locator('a[href="#privacy-details"]').click();assert page.locator('#privacy-details').get_attribute('open') is not None
  page.close()
- page=b.new_page(viewport={'width':1440,'height':1000});calls=[];errors=[];pending_enroll=[];fail_preferences=False;client_ready=False;installation=None
+ page=b.new_page(viewport={'width':1440,'height':1000});calls=[];errors=[];pending_enroll=[];pending_preferences=[];hold_preferences=True;fail_preferences=False;client_ready=False;installation=None
  page.on('pageerror',lambda error:errors.append(str(error)))
  def route(r):
   path=urlsplit(r.request.url).path;calls.append((path,r.request.post_data))
@@ -57,6 +58,7 @@ with sync_playwright() as p:
   if path=='/api/collections/users/auth-with-oauth2':return result(AUTH)
   if path=='/api/collections/users/auth-refresh':return result(AUTH)
   if path=='/api/demo/preferences':
+   if hold_preferences:pending_preferences.append(r);return
    if fail_preferences:return result({'message':'resetting'},503)
    return result({'revision':0,'salesContact':False,'newsletter':False})
   if path=='/api/demo/enroll':
@@ -71,10 +73,23 @@ with sync_playwright() as p:
  page.add_init_script(OAUTH_BROWSER_SCRIPT)
  page.goto('http://demo.test/');page.wait_for_function('document.querySelector("#mode-pill").textContent === "Daily reset"')
  assert page.locator('.continue-button').is_disabled()
- page.locator('#terms').check();assert page.locator('.continue-button').is_disabled()
- page.locator('#terms').uncheck()
+ for choice in ('terms','commercial','newsletter'):assert page.locator('#'+choice).is_disabled()
  # A COOP-severed window handle reports closed before the independent callback.
- page.locator('#google-button').click();page.wait_for_selector('#identity:visible');assert 'Synthetic Visitor' in page.locator('#identity').inner_text()
+ page.locator('#google-button').click()
+ for choice in ('terms','commercial','newsletter'):assert page.locator('#'+choice).is_disabled(), 'OAuth must freeze choices'
+ page.wait_for_function('document.querySelector("#form-status").textContent.includes("Google")')
+ page.wait_for_timeout(1200)
+ assert pending_preferences, 'Sign-in must fetch saved choices'
+ for choice in ('terms','commercial','newsletter'):assert page.locator('#'+choice).is_disabled(), 'Preference loading must freeze choices'
+ assert page.locator('#onboarding').is_hidden()
+ hold_preferences=False
+ pending_preferences.pop().fulfill(status=200,content_type='application/json',body=json.dumps({'revision':0,'salesContact':False,'newsletter':False}))
+ page.wait_for_selector('#identity:visible');assert 'Synthetic Visitor' in page.locator('#identity').inner_text()
+ assert page.locator('.enrollment-card h3').inner_text()=='Review your choices'
+ assert 'Sign in' not in page.locator('.card-intro').inner_text()
+ assert page.locator('#google-note').is_hidden()
+ assert page.locator('.continue-button').inner_text().strip()=='Accept terms & show instructions'
+ assert page.title()=='Try VaultContext · Public demo'
  assert page.locator('.continue-button').is_enabled(), 'Ready visitors can submit to discover required terms'
  # Signed-in account text must stay in its own column, including long identities.
  assert page.locator('#identity-email').inner_text()=='demo@example.com'
@@ -107,22 +122,27 @@ with sync_playwright() as p:
  page.locator('#terms').check();page.locator('.continue-button').click()
  page.wait_for_function('document.querySelector("#signout").disabled')
  assert pending_enroll
+ for choice in ('terms','commercial','newsletter'):assert page.locator('#'+choice).is_disabled(), 'Pending enrollment must freeze consent'
  assert page.locator('.continue-button').is_disabled(), 'Pending enrollment must not offer another submission'
  page.locator('#signout').evaluate('(button)=>button.click()')
  assert page.locator('#identity').is_visible(), 'Signout must not race a pending enrollment'
- pending_enroll.pop().fulfill(status=200,content_type='application/json',body=json.dumps({'enrolled':True,'generation':'2099-01-01','contact':{'revision':1,'unsubscribeToken':'synthetic-withdrawal'}}))
+ pending_enroll.pop().fulfill(status=200,content_type='application/json',body=json.dumps({'enrolled':True,'generation':'2099-01-01','contact':{'revision':1,'unsubscribeToken':'synthetic_withdrawal_'+'x'*24}}))
  page.wait_for_selector('#onboarding:visible')
+ assert page.locator('#contact-permissions').is_visible() and page.locator('#contact-permissions').get_attribute('open') is None
+ assert page.locator('#withdrawal-link').get_attribute('href')=='http://demo.test/#unsubscribe=synthetic_withdrawal_'+('x'*24)
+ assert not any(path=='/api/demo/unsubscribe' for path,_ in calls), 'Saving or rendering a withdrawal link must not invoke it'
  assert 'example.invalid' in page.locator('#connect-code').text_content();assert 'distribution pending' in page.locator('#guide-intro').inner_text();assert 'Demo enrollment saved' in page.locator('#form-status').inner_text()
  stored=page.evaluate("JSON.parse(localStorage.getItem('pocketbase_auth'))")
  assert stored['token']==AUTH['token'] and stored['record']['id']=='synthetic'
  assert page.evaluate('Object.keys(localStorage)')==['pocketbase_auth'], 'Only browser authentication may persist'
+ saved_withdrawal_link=page.locator('#withdrawal-link').get_attribute('href')
  fail_preferences=True
- page.evaluate("live.resetAt = new Date(Date.now() - 1000).toISOString(); updateCountdown();")
- assert page.locator('.continue-button').is_disabled(), 'Reset-due demo must not offer enrollment'
+ page.get_by_text('Manage contact permissions',exact=True).click()
  page.locator('#withdraw').click();page.wait_for_function('document.querySelector("#form-status").textContent.includes("withdrawn")')
  page.wait_for_function('document.querySelector("#preferences-status").textContent.includes("Withdrawal succeeded")')
- page.wait_for_timeout(1100)
- assert 'withdrawn' in page.locator('#form-status').inner_text(), 'Reset timer must not overwrite withdrawal success'
+ page.evaluate("live.resetAt = new Date(Date.now() - 1000).toISOString(); updateCountdown();")
+ assert page.locator('#contact-permissions').is_hidden() and page.locator('#withdrawal-link').get_attribute('href') is None
+ assert page.locator('.continue-button').is_disabled(), 'Reset-due demo must not offer enrollment'
  assert not page.locator('#commercial').is_checked() and not page.locator('#newsletter').is_checked()
  assert not page.locator('#identity').is_visible(), 'Daily reset clears browser identity'
  assert page.locator('#google-button').is_visible()
@@ -131,7 +151,7 @@ with sync_playwright() as p:
  assert any(x[0]=='/api/demo/enroll' for x in calls)
  # Failed preference loading cannot turn successful Google authentication into enrollment.
  page.goto('http://demo.test/');page.wait_for_function('document.querySelector("#mode-pill").textContent === "Daily reset"')
- page.locator('#terms').check();page.locator('#google-button').click()
+ page.locator('#google-button').click()
  page.wait_for_function('!document.querySelector("#google-button").disabled && document.querySelector("#form-status").textContent.includes("unavailable")')
  assert page.locator('.continue-button').is_disabled()
  assert not page.locator('#identity').is_visible()
@@ -144,7 +164,7 @@ with sync_playwright() as p:
  assert 'github.com' not in install and 'uv tool install' not in install
  page.locator('#google-button').click();page.wait_for_selector('#identity:visible');page.locator('#terms').check();page.locator('.continue-button').click()
  page.wait_for_function('document.querySelector("#signout").disabled')
- pending_enroll.pop().fulfill(status=200,content_type='application/json',body=json.dumps({'enrolled':True,'generation':'2099-01-01','contact':{'revision':1,'unsubscribeToken':'synthetic-withdrawal'}}))
+ pending_enroll.pop().fulfill(status=200,content_type='application/json',body=json.dumps({'enrolled':True,'generation':'2099-01-01','contact':{'revision':1,'unsubscribeToken':'synthetic_withdrawal_'+'x'*24}}))
  page.wait_for_selector('#onboarding:visible')
  assert 'example.invalid' in page.locator('#connect-code').text_content()
  assert 'unavailable' in page.locator('#install-code').text_content()
@@ -175,7 +195,7 @@ with sync_playwright() as p:
  assert '\n\nnpx skills add' in install and r'\n' not in install
  page.locator('#google-button').click();page.wait_for_selector('#identity:visible');page.locator('#terms').check();page.locator('.continue-button').click()
  page.wait_for_function('document.querySelector("#signout").disabled')
- pending_enroll.pop().fulfill(status=200,content_type='application/json',body=json.dumps({'enrolled':True,'generation':'2099-01-01','contact':{'revision':1,'unsubscribeToken':'synthetic-withdrawal'}}))
+ pending_enroll.pop().fulfill(status=200,content_type='application/json',body=json.dumps({'enrolled':True,'generation':'2099-01-01','contact':{'revision':1,'unsubscribeToken':'synthetic_withdrawal_'+'x'*24}}))
  page.wait_for_selector('#onboarding:visible')
  assert "VAULTCONTEXT_URL='http://demo.test'" in page.locator('#connect-code').text_content()
  assert 'uv tool install' not in page.locator('#install-code').text_content()
@@ -238,7 +258,7 @@ with sync_playwright() as p:
  # A capability link remains useful after reset/account deletion. Merely opening
  # the page must never invoke the state-changing POST, and failures are retryable.
  for status_mode in ('resetting', 'offline'):
-  page=b.new_page();capability='synthetic_capability_'+'x'*24;withdrawals=[];attempts=[]
+  page=b.new_page();capability=saved_withdrawal_link.split('#unsubscribe=',1)[1];withdrawals=[];attempts=[]
   def capability_route(r):
    path=urlsplit(r.request.url).path
    assert capability not in r.request.url
@@ -256,7 +276,7 @@ with sync_playwright() as p:
    if target.is_file():return r.fulfill(path=str(target))
    r.fulfill(status=404,body='Not found')
   page.route('**/*',capability_route)
-  page.goto('http://withdraw.test/#unsubscribe='+capability)
+  page.goto(saved_withdrawal_link)
   page.wait_for_selector('#link-withdrawal:visible')
   assert page.evaluate('location.hash')=='' and capability not in page.content()
   assert not attempts, 'GET/page load must never unsubscribe'
@@ -293,7 +313,7 @@ with sync_playwright() as p:
  hold_refresh=True;first.reload()
  first.wait_for_timeout(150)
  assert refresh_pending, 'Reload must validate stored auth with authRefresh'
- first.locator('#terms').check()
+ for choice in ('terms','commercial','newsletter'):assert first.locator('#'+choice).is_disabled(), 'Session verification must freeze choices'
  assert first.locator('#identity').is_hidden() and first.locator('.continue-button').is_disabled(), 'Unvalidated localStorage must never imply authentication'
  refresh_pending.pop().fulfill(status=200,content_type='application/json',body=json.dumps(AUTH));hold_refresh=False
  first.wait_for_selector('#identity:visible')
@@ -308,6 +328,7 @@ with sync_playwright() as p:
  first.locator('#signout').click()
  second.wait_for_selector('#identity',state='hidden')
  assert second.locator('#google-button').is_visible() and second.locator('.continue-button').is_disabled()
+ assert second.locator('#contact-permissions').is_hidden() and second.locator('#withdrawal-link').get_attribute('href') is None
  assert not second.locator('#onboarding').is_visible()
  assert not second.evaluate('JSON.parse(localStorage.getItem("pocketbase_auth") || "{}").token'), 'Signout must clear stored auth across tabs'
  second.close()
@@ -348,7 +369,7 @@ with sync_playwright() as p:
  hold_enrollment=True;second.locator('#terms').check();second.locator('.continue-button').click()
  second.wait_for_timeout(150);assert session_enrollments
  first.locator('#signout').click();second.wait_for_selector('#identity',state='hidden')
- session_enrollments.pop().fulfill(status=200,content_type='application/json',body=json.dumps({'enrolled':True,'generation':'2099-01-01','contact':{'revision':1,'unsubscribeToken':'synthetic-withdrawal'}}));hold_enrollment=False
+ session_enrollments.pop().fulfill(status=200,content_type='application/json',body=json.dumps({'enrolled':True,'generation':'2099-01-01','contact':{'revision':1,'unsubscribeToken':'synthetic_withdrawal_'+'x'*24}}));hold_enrollment=False
  second.wait_for_timeout(150)
  assert second.locator('#identity').is_hidden() and second.locator('#onboarding').is_hidden()
  assert second.locator('.continue-button').is_disabled()
@@ -359,7 +380,8 @@ with sync_playwright() as p:
  reset_at='2000-01-01T00:00:00Z';enrollments=session_requests.count('/api/demo/enroll')
  first.evaluate('(auth)=>localStorage.setItem("pocketbase_auth",JSON.stringify(auth))',AUTH);first.reload()
  first.wait_for_function('document.querySelector("#countdown-note").textContent.includes("Reset")')
- first.locator('#terms').check();first.locator('#enrollment-form').evaluate('(form)=>form.requestSubmit()');first.wait_for_timeout(100)
+ assert first.locator('#terms').is_disabled()
+ first.locator('#enrollment-form').evaluate('(form)=>form.requestSubmit()');first.wait_for_timeout(100)
  assert first.locator('.continue-button').is_disabled() and session_requests.count('/api/demo/enroll')==enrollments
  assert not first.evaluate('JSON.parse(localStorage.getItem("pocketbase_auth") || "{}").token')
  context.close()
