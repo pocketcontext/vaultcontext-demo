@@ -359,3 +359,62 @@ Run synthetic coverage with:
 ```sh
 python3 -m unittest discover -s tests -p test_demo_export.py
 ```
+
+
+### Private operator export relay
+
+`deploy/demo/export_relay.py` is an optional host-side operator tool, separate
+from the application image and supervisor. Install the reviewed file root-owned
+at `/usr/local/libexec/demo-export-relay.py`. It binds only host loopback and
+accepts exactly `GET /export/v1`, forwarding through `docker exec` to container
+loopback. Tokens cross stdin only. It resolves the current running ONCE container
+on each request by the exact operator-specified application name, and fails closed
+when absent or ambiguous. It never reads ONCE labels or environment values.
+
+Run separate systemd services for the two demos, each with its own audit file:
+
+```ini
+[Unit]
+Description=Private demo contact export relay
+After=docker.service
+Requires=docker.service
+[Service]
+User=root
+UMask=0077
+ExecStart=/usr/bin/python3 /usr/local/libexec/demo-export-relay.py --source SOURCE --container-name ONCE_NAME --port PORT --audit-file /var/log/demo-contact-export/SOURCE.jsonl
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/demo-contact-export
+PrivateTmp=true
+StandardOutput=null
+StandardError=null
+[Install]
+WantedBy=multi-user.target
+```
+
+Replace placeholders literally: source is `vaultcontext-demo` or
+`wikicontext-demo`; recommended host ports are 18781 and 28781 respectively.
+Obtain the ONCE application name from the container name using Docker's explicit
+`{{.ID}} {{.Names}}` output format; do not dump inspect metadata. The relay uses
+UID 0 for Vault Demo and UID 10002 for Wiki Demo. Provision the verifier with the
+same owner at `/storage/persistent/export-credentials.json`, mode 0600, using an
+atomic write and preserving any existing credentials. This requires no restart.
+
+Create `/var/log/demo-contact-export` root-owned mode 0700 before starting.
+Forward the chosen port with SSH bound locally to 127.0.0.1, pinned host trust,
+and ExitOnForwardFailure. Never publish these ports. Use an SSH identity with
+forwarding restricted to these destinations where possible.
+
+Audit JSON lines contain timestamps, source, credential ID, snapshot ID, counts
+and outcome only. Durable intent is fsynced before source access and completion
+before releasing a response; failed audit writes deny the request. An intent
+without completion indicates an interrupted/uncertain request. The relay audit
+covers relay traffic; direct privileged container access still bypasses it and
+the application's discarded stderr remains unchanged. Log rotation must recreate
+root-owned mode-0600 files inside the private directory (rename rotation, not
+copytruncate); the relay reopens on every event. Retain logs according to the
+operator's access-audit policy. Audit files contain no tokens or contact payloads.
+
+Validate with `python3 -m unittest discover -s tests -p test_demo_export_relay.py`.
