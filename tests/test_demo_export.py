@@ -153,7 +153,7 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(result['complete'])
         self.assertEqual(result['schemaVersion'], 1)
-        self.assertEqual(result['source'], ROOT.name)
+        self.assertEqual(result['source'], 'vaultcontext-demo')
         self.assertEqual(set(result['datasets']), set(module.EXPORT_FIELDS))
         for table, records in result['datasets'].items():
             self.assertEqual(result['counts'][table], len(records))
