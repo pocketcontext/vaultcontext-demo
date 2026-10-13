@@ -274,3 +274,88 @@ Before enabling proxying, verify public readiness, revision/asset attestation,
 OAuth and CLI/API access separately from direct-origin TLS. Public HTML must
 remain byte-exact for release attestation; any hostname-specific edge settings
 must preserve that contract without modifying shared zone-wide settings.
+
+
+## Manual CRM contact export
+
+`GET /export/v1` on the loopback contact service exports one complete business
+snapshot. It does not expose ordinary application data, security observations,
+unsubscribe tokens or their hashes. Existing backend and visitor tokens cannot
+use this route. Export credentials cannot call internal read or mutation routes.
+The endpoint remains disabled until configured; no public route is installed.
+
+The default verifier path is `export-credentials.json` beside `contacts.db`
+(normally `/storage/persistent/export-credentials.json`). A missing file denies
+export. Provisioning this private file enables export on an existing bound
+deployment without changing runtime configuration. WikiContext assigns contact
+files to UID 10002; VaultContext uses the contact process owner.
+
+Optionally set `VAULTCONTEXT_DEMO_EXPORT_CREDENTIALS_FILE` to an absolute path
+inside the contact service's filesystem, outside disposable daily-reset storage.
+Use an owned mode-0600 JSON file with no symlink path components:
+
+```json
+{"version":1,"credentials":[{"id":"crm-import","sha256":"REPLACE_WITH_64_LOWERCASE_HEX_CHARACTERS","enabled":true}]}
+```
+
+Generate a cryptographically random bearer secret with at least 32 random bytes,
+keep it only in the importer's private credential file, and place its SHA-256
+hex digest in the server file. Do not reuse the internal contact-service secret.
+An entry optionally accepts `expires_at` as a positive Unix timestamp in seconds.
+Configuration is re-read and fully validated on every request: disabled, expired,
+missing, unsafe or malformed configuration denies export. Rotate by adding a new
+unique credential ID/hash, updating the importer, then removing the old entry.
+Do not put secrets in command arguments, URLs, logs or source control.
+
+The ONCE runtime and legacy lifecycle configuration accept this optional path
+and pass it only to the contact-service child. Provision its private file in the
+persistent contact container filesystem before enabling it; a host path alone
+does not make the file visible inside a container. Configuration and deployment
+are separate operator actions. Existing runtimes reject changed environment
+bindings, so use the default persistent path for an already configured instance;
+an override belongs in its initial binding configuration. The credential file is not part of the contact
+SQLite replica; keep a separate private operator backup when needed.
+
+Access the loopback service through an operator-controlled restricted SSH tunnel.
+For a host service, for example, forward local port 18781 to host loopback 8781
+using `ssh -N -L 127.0.0.1:18781:127.0.0.1:8781 DEMO_HOST`, with forwarding
+restricted to that destination. Container-only loopback additionally requires an
+operator-configured relay inside its network namespace; ordinary host SSH cannot
+reach container loopback. Do not publish the entire internal service to solve
+this. Direct remote export would require a separately reviewed HTTPS proxy that
+exposes only this export route. No such relay or proxy is installed here.
+
+The importer sends `Authorization: Bearer …` and receives:
+
+```text
+schemaVersion: 1
+source: vaultcontext-demo
+snapshotId: random 32-character hexadecimal ID
+generatedAt: Unix timestamp in seconds
+complete: true
+counts: {contacts, consent_events, suppression, review_events}
+datasets: {contacts: [...], consent_events: [...], suppression: [...], review_events: [...]}
+```
+
+Each dataset preserves original column names and values; `contacts.token_hash`
+is explicitly excluded. SQLite reads run in one read-only transaction. A new
+source column fails export until the versioned contract is reviewed. The service
+bounds the snapshot to 100,000 total rows and 16 MiB; over-limit exports fail with
+HTTP 413 without partial data. HTTP 401 indicates denied credentials, and HTTP
+503 indicates unavailable/fenced storage or a changed schema. Responses are
+`no-store`. Minimal export audit events record credential ID, source, snapshot ID,
+counts and HTTP outcome only; denied credentials have no attributed ID. The service
+does not log contact payloads, identities or bearer headers. The ONCE/standard
+supervisor intentionally discards child stderr, so these source audit events are
+not retained under that supervisor without separate operator log integration.
+The CRM sync-run audit remains separate; it does not record every source access. `generatedAt` records
+the pinned snapshot start, so scan duration cannot make an older snapshot look newer.
+
+Use full-snapshot reconciliation only after validating all dataset counts and
+completion metadata. A failed request never establishes that contacts were
+removed. Manual pulls cannot recover source records that expired between runs.
+Run synthetic coverage with:
+
+```sh
+python3 -m unittest discover -s tests -p test_demo_export.py
+```

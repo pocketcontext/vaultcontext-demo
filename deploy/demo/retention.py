@@ -22,6 +22,71 @@ import time
 from urllib.parse import parse_qs, urlsplit
 
 DAY = 86400
+EXPORT_SOURCE = 'vaultcontext-demo'
+
+EXPORT_FIELDS = {
+    'contacts': ('subject', 'email', 'sales', 'newsletter', 'revision', 'last_used', 'review_due', 'terms', 'consent'),
+    'consent_events': ('id', 'subject', 'at', 'sales', 'newsletter', 'terms', 'consent', 'revision'),
+    'suppression': ('email', 'sales', 'newsletter', 'updated'),
+    'review_events': ('id', 'subject', 'at', 'decision', 'reason', 'revision'),
+}
+EXPORT_MAX_BYTES = 16 * 1024 * 1024
+EXPORT_MAX_ROWS = 100000
+
+
+def export_credential(path, authorization):
+    """Reload private verifiers on every request; malformed configuration denies all."""
+    try:
+        if not path or not authorization.startswith('Bearer '):
+            return None
+        token = authorization[7:]
+        if not 32 <= len(token) <= 256 or not token.isascii():
+            return None
+        target = Path(path)
+        if not target.is_absolute() or any(p.is_symlink() for p in (target, *target.parents)):
+            return None
+        fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_size > 65536:
+                return None
+            config = json.loads(stream.read(65537))
+        if not isinstance(config, dict) or set(config) != {'version', 'credentials'} or type(config['version']) is not int or config['version'] != 1:
+            return None
+        entries = config['credentials']
+        if not isinstance(entries, list) or len(entries) > 100:
+            return None
+        matched = None
+        ids, hashes = set(), set()
+        digest = hashlib.sha256(token.encode()).hexdigest()
+        now = time.time()
+        for entry in entries:
+            if not isinstance(entry, dict) or not {'id', 'sha256', 'enabled'} <= set(entry) <= {'id', 'sha256', 'enabled', 'expires_at'}:
+                return None
+            identifier, verifier = entry['id'], entry['sha256']
+            if not isinstance(identifier, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', identifier) or identifier in ids:
+                return None
+            if not isinstance(verifier, str) or not re.fullmatch(r'[0-9a-f]{64}', verifier) or verifier in hashes or type(entry['enabled']) is not bool:
+                return None
+            expiry = entry.get('expires_at')
+            if 'expires_at' in entry and (type(expiry) is not int or expiry <= 0):
+                return None
+            ids.add(identifier)
+            hashes.add(verifier)
+            same = hmac.compare_digest(digest, verifier)
+            if same and entry['enabled'] and (expiry is None or expiry > now):
+                matched = identifier
+        return matched
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+
+def export_audit(credential, outcome, snapshot=None):
+    snapshot = snapshot or {}
+    print(json.dumps({'event': 'contact_export', 'credentialId': credential,
+                      'source': EXPORT_SOURCE, 'snapshotId': snapshot.get('snapshotId'),
+                      'counts': snapshot.get('counts'), 'outcome': outcome}), file=sys.stderr, flush=True)
 
 
 class Rejected(Exception):
@@ -98,6 +163,43 @@ class Store:
             db.rollback()
             raise
         finally:
+            db.close()
+
+    def export_snapshot(self):
+        # Read-only SQLite transaction pins all tables to one WAL snapshot.
+        if (self.path.parent/'migration-fenced.json').exists():
+            raise Rejected(503)
+        db = sqlite3.connect(self.path.as_uri() + '?mode=ro', uri=True, timeout=10)
+        db.row_factory = sqlite3.Row
+        try:
+            db.execute('PRAGMA query_only=ON')
+            db.execute('BEGIN')
+            # First read pins the WAL snapshot; timestamp this boundary, not the scan end.
+            db.execute('SELECT count(*) FROM sqlite_schema').fetchone()
+            generated_at = int(time.time())
+            datasets = {}
+            size, rows = 0, 0
+            for table, fields in EXPORT_FIELDS.items():
+                actual = tuple(row[1] for row in db.execute('PRAGMA table_info(' + table + ')'))
+                expected = fields + (('token_hash',) if table == 'contacts' else ())
+                if actual != expected:
+                    raise Rejected(503)  # Never silently omit new source fields.
+                records = []
+                for row in db.execute('SELECT ' + ','.join(fields) + ' FROM ' + table + ' ORDER BY ' + fields[0]):
+                    record = dict(row)
+                    size += len(json.dumps(record).encode()) + 2
+                    rows += 1
+                    if size > EXPORT_MAX_BYTES - 4096 or rows > EXPORT_MAX_ROWS:
+                        raise Rejected(413)
+                    records.append(record)
+                datasets[table] = records
+            if (self.path.parent/'migration-fenced.json').exists():
+                raise Rejected(503)
+            return {'schemaVersion': 1, 'source': EXPORT_SOURCE, 'snapshotId': secrets.token_hex(16),
+                    'generatedAt': generated_at, 'complete': True,
+                    'counts': {name: len(records) for name, records in datasets.items()}, 'datasets': datasets}
+        finally:
+            db.rollback()
             db.close()
 
     @staticmethod
@@ -292,7 +394,9 @@ class Store:
         return {'expiredNonmarketing': len(expired), 'marketingReviewDue': due}
 
 
-def handler(store, secret):
+def handler(store, secret, export_credentials_file=None):
+    if export_credentials_file is None:
+        export_credentials_file = str(store.path.parent / 'export-credentials.json')
     class Handler(BaseHTTPRequestHandler):
         server_version = 'DemoContacts'
         def log_message(self, *_args):
@@ -311,6 +415,26 @@ def handler(store, secret):
         def dispatch(self, method):
             try:
                 parsed = urlsplit(self.path)
+                if parsed.path == '/export/v1':
+                    credential = None
+                    try:
+                        if method != 'GET' or parsed.query:
+                            raise Rejected(404)
+                        authorization = self.headers.get('Authorization', '')
+                        if not hmac.compare_digest(authorization, 'Bearer ' + secret):
+                            credential = export_credential(export_credentials_file, authorization)
+                        if credential is None:
+                            raise Rejected(401)
+                        snapshot = store.export_snapshot()
+                        self.reply(200, snapshot)
+                    except Rejected as exc:
+                        export_audit(credential, exc.status)
+                        raise
+                    except Exception:
+                        export_audit(credential, 503)
+                        raise
+                    export_audit(credential, 200, snapshot)
+                    return
                 public_unsubscribe = method == 'POST' and parsed.path == '/unsubscribe' and not parsed.query
                 if not public_unsubscribe and not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + secret):
                     raise Rejected(401)
@@ -394,7 +518,7 @@ def main():
     secret = os.environ.get('VAULTCONTEXT_DEMO_CONTACT_TOKEN', '')
     if len(secret) < 32:
         raise SystemExit('contact service requires a strong configured token')
-    server = ThreadingHTTPServer(('127.0.0.1', args.port), handler(store, secret))
+    server = ThreadingHTTPServer(('127.0.0.1', args.port), handler(store, secret, os.environ.get('VAULTCONTEXT_DEMO_EXPORT_CREDENTIALS_FILE')))
     server.daemon_threads = False
     stopping = threading.Event()
     for sig in (signal.SIGTERM,signal.SIGINT):

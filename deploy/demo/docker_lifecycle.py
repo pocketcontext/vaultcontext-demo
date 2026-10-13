@@ -32,7 +32,7 @@ PRIMARY = {'VAULTCONTEXT_S3_' + name for name in ('BUCKET', 'ENDPOINT', 'REGION'
 REPLICA = {'LITESTREAM_' + name for name in ('BUCKET', 'ENDPOINT', 'REGION', 'PATH', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')}
 CONTACTS = {'CONTACTS_LITESTREAM_' + name for name in ('BUCKET','ENDPOINT','REGION','PATH','ACCESS_KEY_ID','SECRET_ACCESS_KEY')}
 REQUIRED = PRIMARY | REPLICA | CONTACTS | {'VAULTCONTEXT_GOOGLE_CLIENT_ID','VAULTCONTEXT_GOOGLE_CLIENT_SECRET','VAULTCONTEXT_DEMO_CONTACT_TOKEN'}
-OPTIONAL = {'VAULTCONTEXT_S3_FORCE_PATH_STYLE','LITESTREAM_SYNC_INTERVAL','CONTACTS_LITESTREAM_RETENTION_HOURS','CONTACTS_LITESTREAM_SYNC_INTERVAL'}
+OPTIONAL = {'VAULTCONTEXT_DEMO_EXPORT_CREDENTIALS_FILE','VAULTCONTEXT_S3_FORCE_PATH_STYLE','LITESTREAM_SYNC_INTERVAL','CONTACTS_LITESTREAM_RETENTION_HOURS','CONTACTS_LITESTREAM_SYNC_INTERVAL'}
 
 
 def private_file(path):
@@ -80,8 +80,8 @@ def environment(path):
 
 
 def service_environments(values):
-    return {'contact.env':{key:value for key,value in values.items() if key.startswith('CONTACTS_LITESTREAM_') or key=='VAULTCONTEXT_DEMO_CONTACT_TOKEN'},
-            'app.env':{key:value for key,value in values.items() if not key.startswith('CONTACTS_LITESTREAM_')},
+    return {'contact.env':{key:value for key,value in values.items() if key.startswith('CONTACTS_LITESTREAM_') or key in ('VAULTCONTEXT_DEMO_CONTACT_TOKEN', 'VAULTCONTEXT_DEMO_EXPORT_CREDENTIALS_FILE')},
+            'app.env':{key:value for key,value in values.items() if not key.startswith('CONTACTS_LITESTREAM_') and key != 'VAULTCONTEXT_DEMO_EXPORT_CREDENTIALS_FILE'},
             'reset.env':{key:value for key,value in values.items() if key in PRIMARY|REPLICA or key=='LITESTREAM_SYNC_INTERVAL'}}
 
 

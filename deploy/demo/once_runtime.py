@@ -31,7 +31,7 @@ PRIMARY={'VAULTCONTEXT_S3_'+key for key in ('BUCKET','ENDPOINT','REGION','ACCESS
 REPLICA={'LITESTREAM_'+key for key in ('BUCKET','ENDPOINT','REGION','PATH','ACCESS_KEY_ID','SECRET_ACCESS_KEY')}
 CONTACTS={'CONTACTS_LITESTREAM_'+key for key in ('BUCKET','ENDPOINT','REGION','PATH','ACCESS_KEY_ID','SECRET_ACCESS_KEY')}
 REQUIRED=PRIMARY|REPLICA|CONTACTS|{'VAULTCONTEXT_GOOGLE_CLIENT_ID','VAULTCONTEXT_GOOGLE_CLIENT_SECRET','VAULTCONTEXT_DEMO_CONTACT_TOKEN'}
-OPTIONAL={'VAULTCONTEXT_S3_FORCE_PATH_STYLE','LITESTREAM_SYNC_INTERVAL','CONTACTS_LITESTREAM_RETENTION_HOURS','CONTACTS_LITESTREAM_SYNC_INTERVAL'}
+OPTIONAL={'VAULTCONTEXT_DEMO_EXPORT_CREDENTIALS_FILE','VAULTCONTEXT_S3_FORCE_PATH_STYLE','LITESTREAM_SYNC_INTERVAL','CONTACTS_LITESTREAM_RETENTION_HOURS','CONTACTS_LITESTREAM_SYNC_INTERVAL'}
 DATABASES=('data.db','auxiliary.db','contacts.db')
 MAX_DATABASE=512*1024*1024
 
@@ -176,7 +176,7 @@ class Backend:
         self.processes.pop(name,None)
         if code not in (0,-signal.SIGTERM):raise RuntimeErrorSafe('child did not exit cleanly')
     def app_env(self,day):
-        env={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'HOME':'/root',**{k:v for k,v in self.bindings.items() if not k.startswith('CONTACTS_LITESTREAM_')}}
+        env={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'HOME':'/root',**{k:v for k,v in self.bindings.items() if not k.startswith('CONTACTS_LITESTREAM_') and k != 'VAULTCONTEXT_DEMO_EXPORT_CREDENTIALS_FILE'}}
         env.update(VAULTCONTEXT_DEMO_MODE='true',VAULTCONTEXT_DEMO_ONCE='true',VAULTCONTEXT_DEMO_ONCE_CHILD='app',
                    VAULTCONTEXT_DEMO_ONCE_ROOT=str(self.root),VAULTCONTEXT_DEMO_GENERATION=day,
                    VAULTCONTEXT_DEMO_HEALTH_TOKEN=self.health_token,
@@ -195,7 +195,7 @@ class Backend:
     def stop_app(self):self.stop('app')
     def start_contacts(self,initialize=False):
         if 'contacts' in self.processes and self.processes['contacts'].poll() is None:return
-        env={'VAULTCONTEXT_DEMO_ONCE_CHILD':'contacts','PATH':os.environ.get('PATH','/usr/bin:/bin'),'HOME':'/root',**{k:v for k,v in self.bindings.items() if k.startswith('CONTACTS_LITESTREAM_') or k=='VAULTCONTEXT_DEMO_CONTACT_TOKEN'}}
+        env={'VAULTCONTEXT_DEMO_ONCE_CHILD':'contacts','PATH':os.environ.get('PATH','/usr/bin:/bin'),'HOME':'/root',**{k:v for k,v in self.bindings.items() if k.startswith('CONTACTS_LITESTREAM_') or k in ('VAULTCONTEXT_DEMO_CONTACT_TOKEN', 'VAULTCONTEXT_DEMO_EXPORT_CREDENTIALS_FILE')}}
         args=[sys.executable,self.contacts,'--database',str(self.root/'persistent/contacts.db')]
         if initialize:self.execute(args+['init'],env)
         self.launch('contacts',args+['start'],env)
