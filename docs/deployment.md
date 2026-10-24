@@ -70,7 +70,7 @@ A writable recovery can recreate auxiliary state, not its prior history.
 ## Single-writer updates and rollback
 
 Use standard PocketDeploy stop-first delivery after explicit application adoption
-in the `pocketdeploy-v1` deployment. Preserve the volume, OAuth identity, exact
+in the `pocketdeploy-v2` deployment. Preserve the volume, OAuth identity, exact
 storage configuration and contact database. The application-owned supervisor
 holds the writer lock and fences public traffic while validating a compatible
 candidate; keep ONCE automatic updates and whole-volume backups disabled.
@@ -79,7 +79,7 @@ Never run a recovery copy against the active replica.
 The main-only image workflow publishes `ghcr.io/pocketcontext/vaultcontext-demo`
 after all native validation gates. `VAULTCONTEXT_DEMO_PUBLISH=true` enables
 publication. `VAULTCONTEXT_DEMO_DEPLOY_ENABLED=true` enables deployment through
-the deployment-profile `pocketdeploy-v1` GitHub environment, restricted to `main`.
+the deployment-profile `pocketdeploy-v2` GitHub environment, restricted to `main`.
 `VAULTCONTEXT_DEMO_DEPLOY_PAUSED=true` pauses newly evaluated deployment jobs
 without pausing validation or publication. Let an active deployment finish before
 treating the host as fenced.

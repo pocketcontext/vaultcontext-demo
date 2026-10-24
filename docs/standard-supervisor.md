@@ -102,7 +102,7 @@ or failed drain produces a failed exit, which stop-first delivery must reject.
 
 ## Delivery transition
 
-The private `pocketdeploy-v1` repository stages a `latest` application declaration
+The private `pocketdeploy-v2` repository stages a `latest` application declaration
 with stop-first delivery, 900-second stop/readiness budgets and independent DNS.
 Its cutover runbook requires publishing the new PocketDeploy adoption feature,
 pausing/draining/fencing the old dispatcher, verified same-volume adoption, then

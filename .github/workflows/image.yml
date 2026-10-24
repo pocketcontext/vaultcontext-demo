@@ -237,7 +237,7 @@ jobs:
     permissions:
       contents: read
     environment:
-      name: pocketdeploy-v1
+      name: pocketdeploy-v2
     concurrency:
       group: deploy-vaultcontext-demo
       cancel-in-progress: false

@@ -23,7 +23,7 @@ This repository has no production VaultContext publication or deployment path.
 Demo CD is a separate `demo_deploy` job after `demo_manifest`. Enable it with
 repository variable `VAULTCONTEXT_DEMO_DEPLOY_ENABLED=true`; set
 `VAULTCONTEXT_DEMO_DEPLOY_PAUSED=true` to pause deployment while keeping validation
-and publication available. The fixed GitHub environment is `pocketdeploy-v1`.
+and publication available. The fixed GitHub environment is `pocketdeploy-v2`.
 PocketDeploy installs `SERVER_IP`, the configured operator `SERVER_USER`,
 `SSH_KNOWN_HOSTS` and `SSH_PRIVATE_KEY` for the application's restricted key.
 Restrict that environment to `main`. Strict host-key checking remains mandatory;
@@ -74,7 +74,7 @@ existing ONCE application and named volume; never edit ownership state manually,
 initialize the existing volume, or create replacement OAuth/storage identities.
 Prepare private bindings and recoverable deployment state through the deployment
 repository's operator runbook. Install the generic restricted key and
-`pocketdeploy-v1` GitHub environment while CD remains paused. Verify readiness,
+`pocketdeploy-v2` GitHub environment while CD remains paused. Verify readiness,
 contact preservation, recovery and a no-op convergence before unpausing. Revoke
 or retire the old dedicated dispatcher only as documented by the cutover runbook;
 keep it disabled throughout generic verification. A failure requires inspection

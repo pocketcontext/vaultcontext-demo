@@ -25,7 +25,7 @@ class DeploymentTests(unittest.TestCase):
     def test_demo_cd_has_independent_gates_and_no_production_path(self):
         self.assertEqual(DEMO_DEPLOY.splitlines()[0].strip(), "if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.VAULTCONTEXT_DEMO_DEPLOY_ENABLED == 'true' && vars.VAULTCONTEXT_DEMO_DEPLOY_PAUSED != 'true'")
         self.assertIn('    needs:\n      - demo_manifest\n', DEMO_DEPLOY)
-        self.assertIn('    environment:\n      name: pocketdeploy-v1\n', DEMO_DEPLOY)
+        self.assertIn('    environment:\n      name: pocketdeploy-v2\n', DEMO_DEPLOY)
         self.assertIn('      group: deploy-vaultcontext-demo\n      cancel-in-progress: false', DEMO_DEPLOY)
         self.assertNotIn('DEMO_DIGEST', DEMO_DEPLOY)
         self.assertNotIn('always()', DEMO_DEPLOY)
