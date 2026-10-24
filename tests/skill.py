@@ -228,7 +228,8 @@ def main():
     args=parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='vault-skill-') as tmp, server(args.binary) as req:
         command=client_command(args.client,tmp)
-        os.environ['XDG_CACHE_HOME']=str(Path(tmp)/'cache')
+        os.environ['XDG_CACHE_HOME']=str(Path(tmp)/'cache');os.environ['XDG_STATE_HOME']=str(Path(tmp)/'state')
+        os.environ.pop('VAULTCONTEXT_SESSION_DIR',None)
         admin=req('POST','/api/collections/_superusers/auth-with-password',{'identity':'admin@example.com','password':'SyntheticAdminPassword123!'})['token']
         users=[]
         for name in ['alice','bob','eve']:
@@ -300,7 +301,9 @@ def main():
             assert not any(secret in value for secret in private_values), str(path.relative_to(cache))
         # Check all regular application cache files, regardless of extension:
         # neither plaintext keys nor an encrypted bundle may persist here.
-        for path in vc.auth.cache_file(a).parent.rglob('*'):
+        assert vc.auth.session_file(a).parent==Path(tmp)/'state'/'vaultcontext'
+        assert not vc.auth.legacy_session_file(a).exists()
+        for path in [*vc.auth.cache_file(a).parent.rglob('*'),*vc.auth.session_file(a).parent.rglob('*')]:
             if path.is_file():
                 value=path.read_bytes()
                 assert b'key_bundle' not in value and not any(secret in value for secret in private_values), path.name

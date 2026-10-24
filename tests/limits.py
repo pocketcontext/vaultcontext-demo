@@ -18,7 +18,8 @@ def main():
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='vault-limits-') as temporary, server(args.binary) as request:
         root = Path(temporary)
-        with patch.dict(os.environ, {'XDG_CACHE_HOME': str(root / 'cache')}):
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': str(root / 'cache'), 'XDG_STATE_HOME': str(root / 'state')}):
+            os.environ.pop('VAULTCONTEXT_SESSION_DIR', None)
             admin = request('POST', '/api/collections/_superusers/auth-with-password', {
                 'identity': 'admin@example.com', 'password': 'SyntheticAdminPassword123!'})['token']
             password = 'SyntheticLimitsPassword123!'

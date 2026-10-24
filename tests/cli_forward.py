@@ -64,12 +64,14 @@ def main():
         actors=[]
         for name in ['owner','colleague']:
             user=request('POST','/api/collections/users/records',{'email':name+'@example.com','name':name,'password':'SyntheticUserPassword123!','passwordConfirm':'SyntheticUserPassword123!'},admin)
-            env=dict(os.environ,VAULTCONTEXT_URL=request.base_url,VAULTCONTEXT_USER_EMAIL=name+'@example.com',XDG_CACHE_HOME=str(Path(tmp)/'cache'))
+            env=dict(os.environ,VAULTCONTEXT_URL=request.base_url,VAULTCONTEXT_USER_EMAIL=name+'@example.com',XDG_CACHE_HOME=str(Path(tmp)/'cache'),XDG_STATE_HOME=str(Path(tmp)/'state'))
+            env.pop('VAULTCONTEXT_SESSION_DIR',None)
             def cli(*words,env=env):
                 result=subprocess.run(command+list(words),env=env,cwd=tmp,capture_output=True,text=True)
                 assert result.returncode==0,'CLI failed: '+result.stderr
                 return json.loads(result.stdout)
-            with patch.dict(os.environ, {'XDG_CACHE_HOME': env['XDG_CACHE_HOME']}):
+            with patch.dict(os.environ, {'XDG_CACHE_HOME': env['XDG_CACHE_HOME'], 'XDG_STATE_HOME': env['XDG_STATE_HOME']}):
+                os.environ.pop('VAULTCONTEXT_SESSION_DIR', None)
                 cache_test_session({'url': request.base_url, 'email': name+'@example.com'},
                                    'SyntheticUserPassword123!')
             cli('check')

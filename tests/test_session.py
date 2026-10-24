@@ -120,11 +120,15 @@ class SessionTests(unittest.TestCase):
     def test_logout_removes_stale_socket_and_cached_token(self):
         self.stale()
         token = Path(self.tmp.name) / 'token.json'
-        token.write_text('synthetic cached token')
-        with patch.object(cli.auth, 'cache_file', return_value=token):
+        token.write_text('synthetic saved token')
+        legacy = Path(self.tmp.name) / 'legacy-token.json'
+        legacy.write_text('synthetic cached token')
+        with patch.object(cli.auth, 'session_file', return_value=token), \
+             patch.object(cli.auth, 'legacy_session_file', return_value=legacy):
             self.assertEqual(session.stop(self.cfg, logout=True), {'signed_out': True})
         self.assertFalse(self.path.exists())
         self.assertFalse(token.exists())
+        self.assertFalse(legacy.exists())
 
     def test_socket_disappears_during_close_wait(self):
         self.stale()

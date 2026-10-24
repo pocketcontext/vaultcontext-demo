@@ -556,8 +556,8 @@ Manual: https://github.com/pocketcontext/vaultcontext-demo/blob/main/skills/vaul
     add('whoami', 'Show your authenticated account ID',
         'Refresh the application token and return your account ID. Requires login; no unlock needed.', 'whoami')
     add('logout', 'Lock and remove the local sign-in token',
-        'Close the local unlock session and delete the cached application token for the configured '
-        'server and email. Copied tokens are not revoked.', 'logout')
+        'Close the local unlock session and delete the saved application token for the configured '
+        'server and email, including any copy left in the old cache folder. Copied tokens are not revoked.', 'logout')
     add('check', 'Check server schema compatibility',
         'Compare the authenticated server SQL schema with this client\'s bundled snapshot. '
         'Requires login; no unlock needed. Exits with code 3 for schema differences.', 'check')

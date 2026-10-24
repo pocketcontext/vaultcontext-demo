@@ -36,6 +36,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix='vaultcontext-recovery-') as tmp, server(binary) as request, patch.dict(os.environ):
         root = Path(tmp)
         os.environ['XDG_CACHE_HOME'] = str(root / 'cache')
+        os.environ['XDG_STATE_HOME'] = str(root / 'state')
+        os.environ.pop('VAULTCONTEXT_SESSION_DIR', None)
         admin = smoke.superuser_token(request.base_url, 'admin@example.com', 'SyntheticAdminPassword123!')
         password = 'SyntheticRestorePassword123!'
         owner = smoke.provision_user(request.base_url, admin, 'owner@example.test', password)

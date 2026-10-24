@@ -74,17 +74,34 @@ def config(names=ENV[:2]):
     return {'url': url, 'email': os.environ[ENV[1]]}
 
 
-# Token cache: one file per server URL and email, readable only by the current user.
+# Session file: one per server URL and email, readable only by the current user. It lives in
+# the XDG state folder, not the cache, so clearing ~/.cache does not sign the user out (ENG-55).
+
+def session_name(cfg):
+    return hashlib.sha256((cfg['url'] + '\n' + cfg['email']).encode()).hexdigest()[:32] + '.json'
+
+
+def session_file(cfg):
+    folder = os.environ.get('VAULTCONTEXT_SESSION_DIR')
+    if not folder:
+        state = os.environ.get('XDG_STATE_HOME') or str(Path.home() / '.local' / 'state')
+        folder = str(Path(state) / 'vaultcontext')
+    return Path(folder) / session_name(cfg)
+
 
 def cache_file(cfg):
+    """Cache-folder path; the unlock socket and public-key pins derive from it."""
     base = os.environ.get('XDG_CACHE_HOME') or str(Path.home() / '.cache')
-    key = hashlib.sha256((cfg['url'] + '\n' + cfg['email']).encode()).hexdigest()[:32]
-    return Path(base) / 'vaultcontext' / (key + '.json')
+    return Path(base) / 'vaultcontext' / session_name(cfg)
 
 
-def load_session(cfg):
+def legacy_session_file(cfg):
+    """Where clients before ENG-55 kept the session; read once and moved."""
+    return cache_file(cfg)
+
+
+def read_session(cfg, path):
     try:
-        path = cache_file(cfg)
         info = path.lstat()
         parent = path.parent.lstat()
         if (info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o600
@@ -99,16 +116,29 @@ def load_session(cfg):
         return None
 
 
+def load_session(cfg):
+    path = session_file(cfg)
+    if os.path.lexists(path):
+        return read_session(cfg, path)
+    legacy = legacy_session_file(cfg)
+    session = read_session(cfg, legacy)
+    if session is not None and save_session(cfg, session):
+        legacy.unlink(missing_ok=True)
+    return session
+
+
 def save_session(cfg, session):
-    path = cache_file(cfg)
+    path = session_file(cfg)
     try:
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         parent = path.parent.lstat()
         if not stat.S_ISDIR(parent.st_mode) or parent.st_uid != os.getuid() or stat.S_IMODE(parent.st_mode) != 0o700:
-            raise OSError('Unsafe token cache directory')
+            raise OSError('Unsafe session directory')
         crypto.restore_file(path, json.dumps(session).encode(), overwrite=True)
+        return True
     except OSError as error:
-        say(f'note: token not cached ({error.strerror}); sign-in will be required again')
+        say(f'note: session not saved ({error.strerror}); sign-in will be required again')
+        return False
 
 
 # HTTP

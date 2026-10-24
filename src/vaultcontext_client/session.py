@@ -122,7 +122,8 @@ def stop(cfg, logout=False):
     with lifecycle(cfg) as path:
         _stop_locked(cfg, path)
         if logout:
-            auth.cache_file(cfg).unlink(missing_ok=True)
+            auth.session_file(cfg).unlink(missing_ok=True)
+            auth.legacy_session_file(cfg).unlink(missing_ok=True)
     return {'signed_out': True} if logout else {'locked': True}
 
 
