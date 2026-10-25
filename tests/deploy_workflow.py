@@ -178,16 +178,10 @@ class DeploymentTests(unittest.TestCase):
                 self.assertEqual((root/'output').read_text(), 'digest=sha256:'+'c'*64+'\n')
                 self.assertIn(env['IMAGE']+'@sha256:'+'c'*64, (root/'summary').read_text())
 
-    def test_retired_commands_fail_closed_with_guidance(self):
+    def test_retired_old_host_commands_are_removed(self):
         for filename in ('install.py', f'deploy-{APP}.py'):
-            for extra in ([], ['unexpected-target']):
-                with self.subTest(filename=filename, extra=extra):
-                    result = subprocess.run([sys.executable, '-I', str(ROOT / 'deploy' / filename), *extra],
-                                            env={'PATH': '/nonexistent'}, capture_output=True, text=True)
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertIn('once-pocketcontext-v2', result.stderr)
-                    self.assertIn('retired', result.stderr)
-                    self.assertEqual(result.stdout, '')
+            with self.subTest(filename=filename):
+                self.assertFalse((ROOT / 'deploy' / filename).exists())
 
 
     def test_application_and_container_checks_cover_both_architectures(self):

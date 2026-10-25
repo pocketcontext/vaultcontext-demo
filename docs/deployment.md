@@ -91,8 +91,8 @@ revision's public assets and installation contract. The host resolves configured
 `latest` to a digest at pull time. See the
 [complete protocol](ci-and-deployment.md); `/up` alone is not a release attestation.
 
-The app-local `deploy/install.py` and `deploy/deploy-vaultcontext.py` remain retired
-fail-closed stubs. Manage host helpers through the private deployment scaffold.
+The old-host `deploy/install.py` and `deploy/deploy-vaultcontext.py` are removed.
+Manage host helpers through the private deployment scaffold.
 There is no automatic rollback. Before any manual rollback, verify the previous
 image's schema, supervisor and image-namespace compatibility and the pending
 upgrade state. Preserve current data; restoring an older database is a separate
