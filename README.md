@@ -46,6 +46,7 @@ Additional isolated validation:
 ```sh
 uv run --locked python -m unittest discover -s tests -p 'test_demo_*.py'
 uv run --locked python tests/demo_backend.py --binary /path/to/pinned/pocketcontext
+uv run --locked python tests/demo_snapshot_freshness.py --binary /path/to/pinned/pocketcontext
 uv run --locked python tests/identity_rewrap.py --binary /path/to/pinned/pocketcontext
 uv run --locked python tests/demo_sql_contention.py --binary /path/to/pinned/pocketcontext --expect-protected
 uv run --locked python -m unittest discover -s tests -p test_demo_installation.py
@@ -167,6 +168,8 @@ Restores require explicit paths and existing parent directories, reject symlinks
 ## Storage and backups
 
 Metadata reads use authenticated requester-filtered SQL. Writes use the standard REST `vault_actions` collection and transactional hooks; action payloads are not persisted. Encrypted file chunks use protected file storage and authenticated downloads so file bytes do not exhaust SQL snapshot budgets. Independent rules cover file downloads, REST and realtime. There is no implicit operator decryption access.
+
+The pinned server reuses each account's private SQL snapshot while the source database is unchanged. Any committed write, including enrollment, saves, policy changes and account changes, invalidates every retained copy before the next read. Copies live only in process memory and private temporary files, so a restart or daily reset never serves a pre-reset copy, and the demo guard rejects stale-generation or unenrolled requests before any copy is served. Background snapshots and `trackChanges` are not configured; per-visitor admission stays at one. `tests/demo_snapshot_freshness.py` checks reuse, onboarding, read-after-write, visitor isolation, disablement, stale generation, restart and reset.
 
 Complete recovery requires the database replica and every referenced ciphertext object, verified against its stored checksum. A database-only backup is insufficient. Startup must refuse missing/corrupt originals. An ordinary data export instead decrypts accessible file versions in memory and encrypts an archive under a separately entered archive passphrase; it includes no identity private keys or live vault-key envelopes. Exports restore without the server, but cannot recover a forgotten live-vault passphrase. Export plaintext is capped at 64 MiB including base64 overhead and metadata. New exports use format v2 to retain document archive status and require an updated CLI to inspect or restore. The updated CLI also reads existing v1 exports.
 

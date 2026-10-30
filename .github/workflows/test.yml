@@ -58,7 +58,7 @@ jobs:
           uv run --locked --project vaultcontext python vaultcontext/tests/oauth.py
       - name: Isolated application, identity, OAuth, portable skill and deployment checks
         run: |
-          for check in maintenance integration archive_migration auth oauth_integration realtime skill cli_forward deploy backup_integration limits demo_backend identity_rewrap; do
+          for check in maintenance integration archive_migration auth oauth_integration realtime skill cli_forward deploy backup_integration limits demo_backend demo_snapshot_freshness identity_rewrap; do
             uv run --locked --project vaultcontext python "vaultcontext/tests/$check.py" --binary "$PWD/pocketcontext/bin/pocketcontext"
           done
       - name: SQL admission preserves another visitor's access

@@ -469,3 +469,15 @@ AMD64/ARM64 CI, publication, the actual running predecessor revision, verified
 ownership transfer, real Google sign-in and live provider recovery remain release
 and cutover checks. The deployment repository stages its new configuration until
 PocketDeploy's adoption/readiness changes are published and its launcher repinned.
+
+## PocketContext 416841c snapshot reuse — 30 October 2026
+
+The server pin moved from `2fb371c3466c7a5b65adbd6cf95309b46d27c4ee` to
+`416841c4d1225ddc464ce0b1e787a797d5b8d7e8` (v0.9.4, PocketBase v0.41.1); see the
+[upstream review](upstream-review-2026-10-30.md). On Linux against the new pin:
+locked unit discovery (258 tests, 16 skips), every README server check, demo
+backend, new `demo_snapshot_freshness`, SQL contention (`--expect-protected`),
+fenced reset with the real server, copied-launcher skill/CLI forwarding,
+maintenance, entrypoint, object-storage settings, deployment workflow, installation
+and the offline browser suite passed. Docker image, container smoke/restore and
+Litestream-fixture runtime checks were left to CI.

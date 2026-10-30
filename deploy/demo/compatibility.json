@@ -1,7 +1,8 @@
 {
   "format": 1,
-  "schema": "76472c214d46dbe8f5fcc1f9d9111f97a5031b008bf1edecb475f820e3fcd25d",
+  "schema": "b4602755fdc27b256c2912acf0cdf03b94dfe8a33975973269fed76a55313af7",
   "acceptSchemas": [
+    "b4602755fdc27b256c2912acf0cdf03b94dfe8a33975973269fed76a55313af7",
     "76472c214d46dbe8f5fcc1f9d9111f97a5031b008bf1edecb475f820e3fcd25d",
     "761af213fb927c7ef87bb0c09941a2b0fed7e7b567f3c31d109fcf75e4f8f370"
   ],
