@@ -186,7 +186,9 @@ def auth_session(cfg, data, method):
             or not record.get('id') or not isinstance(record.get('email'), str)
             or record['email'].casefold() != cfg['email'].casefold()):
         raise Fail(1, 'Authentication returned an unexpected identity; no session saved. Check VAULTCONTEXT_USER_EMAIL.')
-    session = {'url': cfg['url'], 'email': cfg['email'], 'token': token, 'method': method, 'refreshed_at': time.time()}
+    if cfg.get('_expected_account') and record['id'] != cfg['_expected_account']:
+        raise Fail(1, 'Authentication changed the unlocked account; lock and sign in again. No vault operation was attempted.')
+    session = {'url': cfg['url'], 'email': cfg['email'], 'token': token, 'method': method, 'account': record['id'], 'refreshed_at': time.time()}
     save_session(cfg, session)
     return session
 
@@ -307,7 +309,10 @@ def call(cfg, method, path, body=None):
     session = load_session(cfg)
     if not session or session.get('method') != 'google':
         raise Fail(1, 'Run vaultcontext login to sign in with Google before using this command. Legacy password sessions are no longer supported.')
-    if oauth_refresh_needed(session) or path == '/api/collections/users/auth-refresh':
+    expected = cfg.get('_expected_account')
+    if expected and session.get('account') and session['account'] != expected:
+        raise Fail(1, 'Authentication changed the unlocked account; lock and sign in again. No vault operation was attempted.')
+    if (expected and not session.get('account')) or oauth_refresh_needed(session) or path == '/api/collections/users/auth-refresh':
         # Renew at most every five minutes, or near expiry, to respect auth rate limits.
         status, data = oauth_send(cfg, 'POST', '/api/collections/users/auth-refresh', token=session['token'])
         if status != 200:

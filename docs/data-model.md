@@ -31,6 +31,12 @@ The local host and an unlocked agent are trusted. File contents are untrusted in
 
 The local memory session starts a fresh interpreter rather than continuing after a Python fork. The foreground client verifies the identity before transferring only that identity, account and request configuration over a private inherited socket. Passphrases and encrypted identity bundles do not cross this startup channel. Both processes disable core dumps; standard streams are detached in the worker. A bounded readiness handshake precedes unlock success. The process uses the current interpreter without resolving virtual-environment symlinks.
 
+Workers bind authentication to the immutable account ID verified at unlock. Cached
+login replacement and renewal to a different account fail before a vault request.
+Missing login never starts authentication implicitly; renewal leaves the fixed
+unlock deadline and demo generation/reset limit unchanged. This client-side
+safeguard requires updating installed launchers and explicitly locking/unlocking.
+
 A persistent, empty, mode-0600 lifecycle lock serializes unlock, lock and logout per server/account. Session sockets are mode 0600 in an owned mode-0700 directory, and both sides check native peer credentials. Recovery removes only an unchanged, owned socket after connection refusal; timeouts and unsafe paths fail closed. An exiting worker removes only its own socket inode. Abrupt termination may leave a stale socket, but never a key-bearing file.
 
 Original file bytes are encrypted into immutable protected-file chunks. SQL exports ciphertext storage filenames and ciphertext checksums, never materializing large file payloads into filtered snapshots. Server recovery combines a consistent database replica with retained primary S3 objects and verifies ciphertext checksums before serving restored state. Other actual file fields, including avatars, are checked for complete readable responses but have no authoritative stored checksum. Such backups are server-state copies, not client private-key caches. An ordinary data export excludes the identity bundle and uses a separate archive passphrase. There are no recovery keys; preserving backup bytes cannot replace a lost decryption passphrase. An optionally enrolled macOS Keychain credential is a retained copy of that passphrase, so an enrolled Mac may still unlock after the user forgets it.

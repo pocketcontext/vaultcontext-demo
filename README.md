@@ -133,6 +133,14 @@ The launcher declares its Python requirements and pins the client package to a f
 
 To migrate from the old `vc` launcher, run `vc lock` before installing `vaultcontext`, then remove only the old VaultContext launcher you installed (for example, `~/.local/bin/vc`). The package and skill provide no `vc` alias or compatibility wrapper. Update scripts to call `vaultcontext`. Existing authentication configuration and macOS Keychain enrollment remain valid.
 
+Unlocked workers bind every authenticated operation and token renewal to the immutable
+account ID verified at unlock. A replaced login or renewal for another account
+fails before the vault request; lock, sign in and unlock explicitly to change
+accounts. Renewal never extends the fixed unlock lifetime or the daily reset
+limit. This safeguard is client-side: existing demo installations must update
+the launcher and lock/unlock to adopt it. The advertised client revision remains
+an installation contract, not a server-enforced matching-release gate.
+
 The memory session runs in a fresh Python process using the launcher's own interpreter and installed package environment. Unlock waits for worker readiness; verified keys cross only a private inherited socket, never arguments, environment variables or files. Lock sessions before clearing uv's cache. `unlock`, `lock` and `logout` recover an abandoned socket only after checking ownership, permissions and connection refusal; ambiguous or unsafe endpoints remain errors. Repeating `lock` on an already locked account succeeds.
 
 Alternatively, install the package from a trusted checkout into an external Python 3.11+ virtual environment. This provides the same `vaultcontext` command without requiring uv at runtime:
@@ -322,6 +330,9 @@ review, especially security fixes. Validate both applications independently with
 their pinned servers and synthetic data; a passing demo suite does not establish
 core compatibility. Publish package changes before advancing the portable
 launcher pin and verify the copied launcher from an unrelated directory.
+
+The [1 November 2026 upstream review](docs/upstream-review-2026-11-01.md)
+records the selective account-binding safeguard and exclusions from hosted identity.
 
 The [11 October 2026 upstream review](docs/upstream-review-2026-10-11.md) records
 the selective audit-filter adoption and exclusions from core's release gate.

@@ -258,6 +258,8 @@ def get_version(cfg, identity, account, document, version=None, content=True):
     return data, info, ver
 
 def execute(cfg, identity, account, args):
+    # Every token renewal must retain the identity unlocked in this worker.
+    cfg = dict(cfg, _expected_account=account)
     demo.guard(cfg)
     command = args['command']
     if command == 'change-passphrase':
