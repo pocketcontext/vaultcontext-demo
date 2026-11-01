@@ -34,6 +34,11 @@ signed identity rewrap, protected SQL contention and maintenance checks passed.
 Standalone OAuth, deployment workflow, entrypoint, object-storage settings and
 Playwright demo website checks passed with isolated synthetic fixtures.
 
-Container image/restore gates and the published copied-launcher checks remain
-release steps; these local results do not claim production deployment or live
-Google-provider verification.
+The published package source `036e8d20eb1e3281ad94860be0159a5b28bb324a`
+was verified remotely before adoption. The updated standalone demo launcher
+passed both portable skill and terminal forwarding suites when copied into
+unrelated temporary directories. The installation metadata test also passed.
+No globally installed production client was replaced.
+
+Container image/restore gates remain release steps; these local results do not
+claim deployment or live Google-provider verification.
