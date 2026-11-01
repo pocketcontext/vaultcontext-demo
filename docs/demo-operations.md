@@ -418,3 +418,20 @@ copytruncate); the relay reopens on every event. Retain logs according to the
 operator's access-audit policy. Audit files contain no tokens or contact payloads.
 
 Validate with `python3 -m unittest discover -s tests -p test_demo_export_relay.py`.
+
+## Litestream cleanup cadence
+
+The main/auxiliary database configuration and the separate retained-contact
+replica check expired L0 files every five minutes. This reduces idle object-store
+list requests while preserving the ten-second default sync interval, compaction
+schedule, file-age/compaction deletion safeguards, daily reset and contact
+snapshot retention. Eligible local and remote L0 files may remain longer before
+cleanup; successful L1 compaction can also trigger cleanup. This intentionally
+uses a slower check than Litestream's documented cleanup-timing recommendation.
+The local contact-replica fixture uses the same setting as the S3 deployment.
+
+This selective storage change adopts the setting and image-level monitor check
+from core vaultcontext `3b1fdf5cfa3d7b27b4f3310f2a1e9b721fe7f12b`. The demo additionally
+applies it to its separate contact replica and synthetic local-replica generator.
+Production identity, enrollment, deployment and client changes remain excluded;
+server and portable-client pins are unchanged because their code is unchanged.

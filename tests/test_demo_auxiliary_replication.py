@@ -51,6 +51,7 @@ class DemoAuxiliaryTests(unittest.TestCase):
     def test_config_keeps_production_and_uses_separate_demo_prefix(self):
         before=self.config.read_bytes();runtime.configure_replication()
         generated=Path(runtime.DEMO_CONFIG).read_text()
+        self.assertIn('l0-retention-check-interval: 5m', generated.splitlines())
         self.assertEqual(self.config.read_bytes(),before)
         self.assertIn('path: '+str(self.data/'auxiliary.db'),generated)
         self.assertIn('${LITESTREAM_DEMO_AUXILIARY_PATH}',generated)

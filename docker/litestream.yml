@@ -1,3 +1,5 @@
+# Reduce idle object-store listings; deletion eligibility and sync cadence are unchanged.
+l0-retention-check-interval: 5m
 # Private container-local IPC for startup replica initialization.
 socket:
   enabled: true

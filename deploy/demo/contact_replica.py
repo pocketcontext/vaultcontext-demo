@@ -108,7 +108,8 @@ class Replica:
             replica.mkdir(mode=0o700,parents=True,exist_ok=True)
             # Explicit file replica for isolated synthetic integration; no cloud fallback.
             self.config=str(self.root/'local-litestream.yml')
-            content=('socket:\n  enabled: true\n  path: '+json.dumps(str(self.socket))+'\n  permissions: 0600\n'
+            content=('l0-retention-check-interval: 5m\n'
+                     'socket:\n  enabled: true\n  path: '+json.dumps(str(self.socket))+'\n  permissions: 0600\n'
                      'snapshot:\n  interval: 1h\n  retention: '+hours+'h\nretention:\n  enabled: true\n'
                      'dbs:\n  - path: '+json.dumps(str(self.database))+'\n    replica:\n      type: file\n      path: '+json.dumps(str(replica))+'\n      sync-interval: '+json.dumps(self.env['CONTACTS_LITESTREAM_SYNC_INTERVAL'])+'\n')
             fd=os.open(self.config,os.O_WRONLY|os.O_CREAT|os.O_TRUNC|os.O_NOFOLLOW,0o600)

@@ -395,6 +395,9 @@ def smoke(image, tmp, run_id):
     run_app(image, name, volume, env, network)
     volumes.remove(volume)
     base = wait_up(name)
+    check(any('starting L0 retention monitor' in line and 'interval=5m0s' in line
+              for line in logs(name).splitlines()),
+          'Litestream runs expired L0 cleanup checks every five minutes')
     public_assets(base)
     check(docker('exec', name, 'cat', '/proc/1/comm')[1].strip() == 'tini', 'PID 1 is tini')
 

@@ -21,6 +21,13 @@ import contact_replica as replica
 import retention
 
 class ContactReplicaTests(unittest.TestCase):
+    def test_local_and_s3_cleanup_intervals_match(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {}, clear=True):
+            value = replica.Replica(Path(tmp)/'state/contacts.db', 'unused', 'unused', 'unused',
+                                    local_replica=Path(tmp)/'remote')
+            for config in (Path(value.config), ROOT/'deploy/demo/contact-litestream.yml'):
+                self.assertIn('l0-retention-check-interval: 5m', config.read_text().splitlines())
+
     def test_contact_replica_defaults_to_ten_seconds_and_honors_override(self):
         for override, expected in ((None, '10s'), ('2s', '2s')):
             with self.subTest(override=override), tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {}, clear=True):
